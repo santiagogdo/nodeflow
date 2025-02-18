@@ -1,0 +1,39 @@
+{
+  "author": {
+    "name": "Santiago Gomez de Oliveira",
+    "email": "santiagogdo.hybrid891@passinbox.com"
+  },
+  "name": "nodeflow",
+  "version": "1.0.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/nodeflow.umd.cjs",
+  "module": "./dist/nodeflow.js",
+  "exports": {
+    ".": {
+      "import": "./dist/nodeflow.js",
+      "require": "./dist/nodeflow.umd.cjs"
+    }
+  },
+  "types": "dist/nodeflow.d.ts",
+  "scripts": {
+    "example": "node ./examples/run-example.js",
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview --host",
+    "test": "vitest",
+    "test:watch": "vitest watch",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.0.5",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vite-plugin-dts": "^4.5.0",
+    "vitest": "^3.0.5",
+    "vitest-canvas-mock": "^0.3.3"
+  }
+}
