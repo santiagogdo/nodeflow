@@ -1,45 +1,6 @@
 import { Component, Entity } from '../components/component';
 import { Animation, AnimationOptions } from './animation';
 
-// export class AnimationManager {
-//   private animations: Set<Animation> = new Set();
-//   private animationRequests: Set<Animation> = new Set();
-//   public activeAnimations = new Map<Component<any>, Partial<any>>();
-//   private isRunning: boolean = false;
-
-//   // constructor(private onFrame: () => void) {}
-
-//   public requestAnimation<T>(animationParams: AnimationOptions) {
-//     const animation = new Animation(animationParams);
-//     this.animations.add(animation);
-//     if (!this.isRunning) {
-//       this.isRunning = true;
-//       requestAnimationFrame(this.loop.bind(this));
-//     }
-//   }
-
-//   private loop(currentTime: number) {
-//     this.animations.forEach((animation) => {
-//       const done = animation.update(currentTime);
-//       if (done) {
-//         this.animations.delete(animation);
-//       }
-//     });
-
-//     // Continue the loop if there are animations left
-//     if (this.animations.size > 0) {
-//       requestAnimationFrame(this.loop.bind(this));
-//     } else {
-//       this.isRunning = false;
-//     }
-//   }
-
-//   public clear() {
-//     this.animations.clear();
-//     this.isRunning = false;
-//   }
-// }
-
 export class AnimationManager {
   private animations = new Set<Animation>();
   public activeAnimations = new Map<Component<any> | Entity, Partial<any>>();

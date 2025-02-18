@@ -1,5 +1,4 @@
-// renderer.ts
-import { Editor } from '../core/editor';
+import { Editor } from '../core/editor/editor';
 import { Node } from '../core/components/node';
 import { Connection } from '../core/components/connection';
 import { Port } from '../core/components/port';
@@ -26,7 +25,10 @@ export interface RenderRequest {
 
 export class Renderer {
   public fpsCounter = new FPSCounter();
-  constructor(private editor: Editor, private ctx: CanvasRenderingContext2D) {}
+  public showFPSCounter: boolean;
+  constructor(private editor: Editor, private ctx: CanvasRenderingContext2D) {
+    this.showFPSCounter = editor.editorConfig?.showFPSCounter || false;
+  }
 
   public renderScene(request: RenderRequest) {
     const { nodes, connections, transform, pendingConnection } = request;
@@ -60,12 +62,14 @@ export class Renderer {
 
     this.ctx.restore();
 
-    this.ctx.save();
-    this.ctx.scale(devicePixelRatio, devicePixelRatio);
-    this.ctx.fillStyle = 'white';
-    this.ctx.font = '16px Inter, serif';
-    this.ctx.fillText(`FPS: ${this.fpsCounter.getFPS().toFixed(2)}`, 10, 20);
-    this.ctx.restore();
+    if (this.showFPSCounter) {
+      this.ctx.save();
+      this.ctx.scale(devicePixelRatio, devicePixelRatio);
+      this.ctx.fillStyle = 'white';
+      this.ctx.font = '16px Inter, serif';
+      this.ctx.fillText(`FPS: ${this.fpsCounter.getFPS().toFixed(2)}`, 10, 20);
+      this.ctx.restore();
+    }
   }
 
   // Example method to draw a "pending connection" line from a port to mouse

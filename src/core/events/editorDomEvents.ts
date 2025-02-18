@@ -1,4 +1,4 @@
-import { Editor } from '../editor';
+import { Editor } from '../editor/editor';
 import { Node } from '../components/node';
 import { Port } from '../components/port';
 import { getContextMenu, toggleContextMenu } from '../contextMenu/contextMenu';
@@ -7,7 +7,7 @@ export class EditorDomEvents {
   private editor: Editor;
   private container: HTMLElement;
   private canvas: HTMLCanvasElement;
-
+  private backgroundCanvas: HTMLCanvasElement;
   // For mouse state
   private isDraggingNode: boolean = false;
   private dragNode: Node | null = null;
@@ -20,11 +20,16 @@ export class EditorDomEvents {
   private panOffsetStartX: number = 0;
   private panOffsetStartY: number = 0;
 
-  constructor(editor: Editor, container: HTMLElement, canvas: HTMLCanvasElement) {
+  constructor(
+    editor: Editor,
+    container: HTMLElement,
+    canvas: HTMLCanvasElement,
+    backgroundCanvas: HTMLCanvasElement
+  ) {
     this.editor = editor;
     this.container = container;
     this.canvas = canvas;
-
+    this.backgroundCanvas = backgroundCanvas;
     this.handleResize();
     this.initDOMEvents();
   }
@@ -55,6 +60,25 @@ export class EditorDomEvents {
     if (this.canvas.width !== displayW || this.canvas.height !== displayH) {
       this.canvas.width = displayW;
       this.canvas.height = displayH;
+    }
+
+    const backgroundRect = this.backgroundCanvas.getBoundingClientRect();
+    const backgroundDevicePixelRatio = this.editor.getDevicePixelRatio();
+    const backgroundDisplayW = Math.floor(backgroundRect.width * backgroundDevicePixelRatio);
+    const backgroundDisplayH = Math.floor(backgroundRect.height * backgroundDevicePixelRatio);
+    if (
+      this.backgroundCanvas.width !== backgroundDisplayW ||
+      this.backgroundCanvas.height !== backgroundDisplayH
+    ) {
+      this.backgroundCanvas.width = backgroundDisplayW;
+      this.backgroundCanvas.height = backgroundDisplayH;
+
+      const backgroundRenderer = this.editor.getBackgroundRenderer();
+      backgroundRenderer.render({
+        scale: this.editor.getScale(),
+        offsetX: this.editor.getOffsetX(),
+        offsetY: this.editor.getOffsetY(),
+      });
     }
   }
 
@@ -176,6 +200,13 @@ export class EditorDomEvents {
       this.editor.setOffsetX(this.panOffsetStartX + dx);
       this.editor.setOffsetY(this.panOffsetStartY + dy);
       this.editor.render();
+
+      // Update background
+      this.editor.getBackgroundRenderer().render({
+        scale: this.editor.getScale(),
+        offsetX: this.editor.getOffsetX(),
+        offsetY: this.editor.getOffsetY(),
+      });
       return;
     }
 
@@ -214,5 +245,12 @@ export class EditorDomEvents {
     const currentOffsetY = this.editor.getOffsetY();
     this.editor.setOffsetX(currentOffsetX + (afterZoom.x - beforeZoom.x) * scale);
     this.editor.setOffsetY(currentOffsetY + (afterZoom.y - beforeZoom.y) * scale);
+
+    // Update background
+    this.editor.getBackgroundRenderer().render({
+      scale: this.editor.getScale(),
+      offsetX: this.editor.getOffsetX(),
+      offsetY: this.editor.getOffsetY(),
+    });
   }
 }

@@ -1,42 +1,18 @@
-// Editor.ts
-import { Node } from './components/node';
-import { Connection } from './components/connection';
-import { Port } from './components/port';
-import { Position, Size } from '../utils/interfaces';
-import {
-  Animatable,
-  ComputedStyleChange,
-  NodeStyle,
-  PortStyle,
-  StyleManager,
-  StyleStateParams,
-} from './styles/styles';
-import { AnimationManager } from './animation/animationManager';
-import { Renderer } from '../rendering/renderer';
-import { Component, ComponentParams, ComponentType, Entity } from './components/component';
-import { Easing, getEasingFunction } from './animation/easingFunctions';
-import { InterpolatableValue } from './animation/animation';
-import { createContextMenu } from './contextMenu/contextMenu';
-import { EditorDomEvents } from './events/editorDomEvents';
-import { EventEmitter } from './events/eventEmitter';
-
-export interface AddNodeParams extends ComponentParams {
-  data?: Record<string, any>;
-  ports?: Array<AddPortParams>;
-  label?: string;
-  style?: StyleStateParams<NodeStyle>;
-}
-
-/** Parameters for defining node ports
- * @param type - 'input' or 'output'
- * @param position - The position of the port on the node (relative to the node position))
- * @param style - The style of the port
- */
-interface AddPortParams {
-  type: 'input' | 'output';
-  position: Position;
-  style?: StyleStateParams<PortStyle>;
-}
+import { Node } from '../components/node';
+import { Connection } from '../components/connection';
+import { Port } from '../components/port';
+import { Position, Size } from '../../utils/interfaces';
+import { Animatable, ComputedStyleChange, StyleManager, StyleStateParams } from '../styles/styles';
+import { AnimationManager } from '../animation/animationManager';
+import { Renderer } from '../../rendering/renderer';
+import { Component, ComponentType, Entity } from '../components/component';
+import { Easing, getEasingFunction } from '../animation/easingFunctions';
+import { InterpolatableValue } from '../animation/animation';
+import { createContextMenu } from '../contextMenu/contextMenu';
+import { EditorDomEvents } from '../events/editorDomEvents';
+import { EventEmitter } from '../events/eventEmitter';
+import { BackgroundRenderer } from '../../rendering/backgroundRenderer';
+import { AddNodeParams, EditorConfig } from './types';
 
 /**
  * The main Editor class:
@@ -64,8 +40,8 @@ export class Editor {
   // The canvas + 2D context
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  // For auto-resizing high-DPI
-  private devicePixelRatio = window.devicePixelRatio || 1;
+  private backgroundCanvas: HTMLCanvasElement;
+  private backgroundCtx: CanvasRenderingContext2D;
 
   // Style & animation
   public styleManager = new StyleManager();
@@ -73,16 +49,33 @@ export class Editor {
 
   // The renderer that draws full scene
   private renderer: Renderer;
+  private backgroundRenderer: BackgroundRenderer;
+  public editorConfig?: EditorConfig;
 
   public domEvents: EditorDomEvents;
   public customEvents = new EventEmitter();
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, config?: EditorConfig) {
+    if (config) {
+      this.editorConfig = config;
+    }
+
     this.canvas = document.createElement('canvas');
+    this.backgroundCanvas = document.createElement('canvas');
+
+    this.backgroundCanvas.style.width = '100%';
+    this.backgroundCanvas.style.height = '100%';
+    this.backgroundCanvas.style.background = config?.background || 'transparent';
+    this.backgroundCanvas.style.position = 'absolute';
+    this.backgroundCanvas.style.top = '0';
+    this.backgroundCanvas.style.left = '0';
+    this.backgroundCanvas.style.zIndex = '-1';
+
     this.canvas.style.width = '100%';
     this.canvas.style.height = '100%';
     this.canvas.style.background = 'transparent';
 
+    container.appendChild(this.backgroundCanvas);
     container.appendChild(this.canvas);
 
     const contextMenu = createContextMenu();
@@ -98,11 +91,18 @@ export class Editor {
       throw new Error('Cannot get 2D canvas context');
     }
 
-    this.ctx = ctx;
+    const backgroundCtx = this.backgroundCanvas.getContext('2d');
+    if (!backgroundCtx) {
+      throw new Error('Cannot get 2D canvas context');
+    }
 
-    this.domEvents = new EditorDomEvents(this, container, this.canvas);
+    this.ctx = ctx;
+    this.backgroundCtx = backgroundCtx;
 
     this.renderer = new Renderer(this, ctx);
+    this.backgroundRenderer = new BackgroundRenderer(this, backgroundCtx);
+
+    this.domEvents = new EditorDomEvents(this, container, this.canvas, this.backgroundCanvas);
 
     this.styleManager.onTransitionableStyleChanged(
       ComponentType.Node,
@@ -122,6 +122,11 @@ export class Editor {
     this.styleManager.onAnimation(ComponentType.Connection, this.onAnimation.bind(this));
 
     // Start the main animation + render loop
+    this.backgroundRenderer.render({
+      scale: this.scale,
+      offsetX: this.offsetX,
+      offsetY: this.offsetY,
+    });
     requestAnimationFrame(this.frameLoop.bind(this));
   }
 
@@ -383,8 +388,11 @@ export class Editor {
     return this.offsetY;
   }
 
+  /**
+   * Returns the device pixel ratio of the window.
+   */
   public getDevicePixelRatio() {
-    return this.devicePixelRatio;
+    return window.devicePixelRatio || 1;
   }
 
   public setOffsetX(x: number): void {
@@ -483,6 +491,10 @@ export class Editor {
 
   public getAnimationManager() {
     return this.animationManager;
+  }
+
+  public getBackgroundRenderer() {
+    return this.backgroundRenderer;
   }
 
   /**
