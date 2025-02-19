@@ -99,14 +99,14 @@ describe('BackgroundRenderer', () => {
     // Account for the initial render
     backgroundRenderer.render(transform);
 
-    // 1) Verify the entire canvas was cleared in device coordinates:
+    // Verify the entire canvas was cleared in device coordinates:
     expect(clearRectSpy).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
 
-    // 2) Collect all calls to moveTo(...) and lineTo(...).
-    //    NOTE: these are in "world" coords because of the transforms you apply.
+    // Collect all calls to moveTo(...) and lineTo(...).
+    // NOTE: these are in "world" coords because of the transforms.
     const allCalls = [...moveSpy.mock.calls, ...lineSpy.mock.calls];
 
-    // 3) Recompute the same bounding box the code uses in "world" coordinates:
+    // Recompute the same bounding box the code uses in "world" coordinates:
     const devicePixelRatio = editor.getDevicePixelRatio(); // or backgroundRenderer.editor.getDevicePixelRatio()
     const canvasWidth = ctx.canvas.width;
     const canvasHeight = ctx.canvas.height;
@@ -131,7 +131,7 @@ describe('BackgroundRenderer', () => {
     const endX = Math.ceil(viewportRight / minorGridSize) * minorGridSize;
     const endY = Math.ceil(viewportBottom / minorGridSize) * minorGridSize;
 
-    // 4) Check that each line coordinate is within the computed bounding box
+    // Check that each line coordinate is within the computed bounding box
     for (const [worldX, worldY] of allCalls) {
       expect(worldX).toBeGreaterThanOrEqual(startX);
       expect(worldX).toBeLessThanOrEqual(endX);
