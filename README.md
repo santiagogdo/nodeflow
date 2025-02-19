@@ -1,5 +1,7 @@
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](code_of_conduct.md)
 
+![nodeflow](https://github.com/user-attachments/assets/14e40f60-1bba-45bc-b774-9b37bc001a80)
+
 # Nodeflow
 
 Nodeflow is a powerful and flexible yet simple library for creating and managing graphical node-based editors. It is designed to make building node-based UIs easy and intuitive, providing a wide range of features and customization options.
