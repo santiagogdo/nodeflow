@@ -9,17 +9,17 @@ describe('BackgroundRenderer', () => {
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D;
   let backgroundRenderer: BackgroundRenderer;
+  let backgroundCanvas: HTMLCanvasElement;
+  let backgroundCtx: CanvasRenderingContext2D;
 
   beforeEach(() => {
-    // Create a canvas element
-    canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 600;
-
-    // Get the 2D context
-    ctx = canvas.getContext('2d')!;
-
     // Create editor with grid config
+    vi.mock('../src/core/contextMenu/contextMenu.ts', () => ({
+      createContextMenu: () => document.createElement('div'),
+      getContextMenu: () => document.createElement('div'),
+      toggleContextMenu: () => {},
+    }));
+
     editor = new Editor(document.createElement('div'), {
       grid: {
         size: 20,
@@ -31,7 +31,11 @@ describe('BackgroundRenderer', () => {
       },
     });
 
-    backgroundRenderer = new BackgroundRenderer(editor, ctx);
+    canvas = editor.getCanvas();
+    ctx = canvas.getContext('2d')!;
+    backgroundRenderer = editor.getBackgroundRenderer();
+    backgroundCanvas = editor.getBackgroundCanvas();
+    backgroundCtx = backgroundCanvas.getContext('2d')!;
   });
 
   it('should apply correct transformations before rendering the grid', () => {
@@ -46,11 +50,12 @@ describe('BackgroundRenderer', () => {
     vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(devicePixelRatio);
 
     // Spy on context methods
-    const saveSpy = vi.spyOn(ctx, 'save');
-    const scaleSpy = vi.spyOn(ctx, 'scale');
-    const translateSpy = vi.spyOn(ctx, 'translate');
-    const restoreSpy = vi.spyOn(ctx, 'restore');
+    const saveSpy = vi.spyOn(backgroundCtx, 'save').mockClear();
+    const scaleSpy = vi.spyOn(backgroundCtx, 'scale').mockClear();
+    const translateSpy = vi.spyOn(backgroundCtx, 'translate').mockClear();
+    const restoreSpy = vi.spyOn(backgroundCtx, 'restore').mockClear();
 
+    // Account for the initial render
     backgroundRenderer.render(transform);
 
     // Check transform call order
@@ -72,7 +77,7 @@ describe('BackgroundRenderer', () => {
     };
 
     // Spy on the lineWidth setter
-    const lineWidthSpy = vi.spyOn(ctx, 'lineWidth', 'set');
+    const lineWidthSpy = vi.spyOn(backgroundCtx, 'lineWidth', 'set');
 
     backgroundRenderer.render(transform);
 
@@ -87,10 +92,11 @@ describe('BackgroundRenderer', () => {
       offsetY: 100,
     };
 
-    const clearRectSpy = vi.spyOn(ctx, 'clearRect');
-    const moveSpy = vi.spyOn(ctx, 'moveTo');
-    const lineSpy = vi.spyOn(ctx, 'lineTo');
+    const clearRectSpy = vi.spyOn(backgroundCtx, 'clearRect').mockClear();
+    const moveSpy = vi.spyOn(backgroundCtx, 'moveTo').mockClear();
+    const lineSpy = vi.spyOn(backgroundCtx, 'lineTo').mockClear();
 
+    // Account for the initial render
     backgroundRenderer.render(transform);
 
     // 1) Verify the entire canvas was cleared in device coordinates:
@@ -147,10 +153,11 @@ describe('BackgroundRenderer', () => {
       },
     });
 
-    backgroundRenderer = new BackgroundRenderer(editor, ctx);
+    backgroundRenderer = new BackgroundRenderer(editor, backgroundCtx);
 
-    // Spy on strokeStyle
-    const strokeStyleSpy = vi.spyOn(ctx, 'strokeStyle', 'set');
+    // Spy on strokeStyle and lineWidth
+    const strokeStyleSpy = vi.spyOn(backgroundCtx, 'strokeStyle', 'set');
+    const lineWidthSpy = vi.spyOn(backgroundCtx, 'lineWidth', 'set');
 
     backgroundRenderer.render({ scale: 1, offsetX: 0, offsetY: 0 });
 
@@ -159,8 +166,28 @@ describe('BackgroundRenderer', () => {
     if (!gridColor) return;
     const minorColor = { ...gridColor, a: gridColor.a * 0.2 };
     const majorColor = { ...gridColor, a: gridColor.a * 0.75 };
+
+    // Verify minor grid lines use correct color and width
     expect(strokeStyleSpy).toHaveBeenCalledWith(getRGBAString(minorColor));
+    expect(lineWidthSpy).toHaveBeenCalledWith(1); // At scale 1
+
+    // Verify major grid lines use correct color and width
     expect(strokeStyleSpy).toHaveBeenCalledWith(getRGBAString(majorColor));
+    expect(lineWidthSpy).toHaveBeenCalledWith(2); // At scale 1
+
+    // Verify grid size by checking line positions
+    const moveSpy = vi.spyOn(backgroundCtx, 'moveTo');
+    const lineSpy = vi.spyOn(backgroundCtx, 'lineTo');
+    const allCalls = [...moveSpy.mock.calls, ...lineSpy.mock.calls];
+
+    // Sample some coordinates to verify 40px grid spacing
+    const gridPositions = allCalls.map((call) => call[0]).filter((x) => x !== 0);
+    const uniquePositions = [...new Set(gridPositions)];
+    const spacings = uniquePositions.slice(1).map((pos, i) => pos - uniquePositions[i]);
+
+    spacings.forEach((spacing) => {
+      expect(spacing).toBe(40);
+    });
   });
 
   it('should translate the grid by the correct offset during pan operations', () => {
@@ -176,7 +203,7 @@ describe('BackgroundRenderer', () => {
       offsetY: 50,
     };
 
-    const translateSpy = vi.spyOn(ctx, 'translate');
+    const translateSpy = vi.spyOn(backgroundCtx, 'translate');
 
     // Render initial grid
     backgroundRenderer.render(initialTransform);
@@ -192,5 +219,104 @@ describe('BackgroundRenderer', () => {
     // (assuming the only difference is the offset)
     expect(panX - initX).toBe(50);
     expect(panY - initY).toBe(50);
+  });
+
+  it('should not re-render grid when locked and panning', () => {
+    const container = document.createElement('div');
+    editor = new Editor(container, {
+      grid: { size: 20, color: 'rgba(255, 255, 255, 0.8)', locked: true },
+    });
+
+    canvas = editor.getCanvas();
+
+    // Spy on rendering
+    const renderSpy = vi.spyOn(editor.getBackgroundRenderer(), 'render');
+
+    // Increment the call count to account for the initial render
+    editor.getBackgroundRenderer().render({ scale: 1, offsetX: 0, offsetY: 0 });
+
+    // Initial render happens in constructor
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+
+    // Simulate panning through DOM events
+    canvas.dispatchEvent(
+      new MouseEvent('mousedown', {
+        button: 0, // Left click
+        clientX: 100,
+        clientY: 100,
+      })
+    );
+
+    canvas.dispatchEvent(
+      new MouseEvent('mousemove', {
+        clientX: 150,
+        clientY: 150,
+      })
+    );
+
+    canvas.dispatchEvent(new MouseEvent('mouseup'));
+
+    // Because grid is locked, no additional renders should occur
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    expect(renderSpy).toHaveBeenLastCalledWith({
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+    });
+  });
+
+  it('should re-render grid when unlocked and panning', () => {
+    const container = document.createElement('div');
+    editor = new Editor(container, {
+      grid: {
+        size: 20,
+        color: 'rgba(255, 255, 255, 0.8)',
+        locked: false,
+      },
+    });
+
+    canvas = editor.getCanvas();
+
+    // Spy on the render method
+    backgroundRenderer = editor.getBackgroundRenderer();
+    const renderSpy = vi.spyOn(backgroundRenderer, 'render');
+    // Increment the call count to account for the initial render
+    backgroundRenderer.render({ scale: 1, offsetX: 0, offsetY: 0 });
+
+    // Initial render happens in constructor
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+
+    // Verify the initial render call had the initial transforms
+    expect(renderSpy).toHaveBeenLastCalledWith({
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+    });
+
+    // Simulate panning through DOM events
+    canvas.dispatchEvent(
+      new MouseEvent('mousedown', {
+        button: 0, // Left click
+        clientX: 100,
+        clientY: 100,
+      })
+    );
+
+    canvas.dispatchEvent(
+      new MouseEvent('mousemove', {
+        clientX: 150,
+        clientY: 150,
+      })
+    );
+
+    canvas.dispatchEvent(new MouseEvent('mouseup'));
+
+    // Verify that render was called with updated transforms
+    expect(renderSpy).toHaveBeenCalledTimes(2);
+    expect(renderSpy).toHaveBeenLastCalledWith({
+      scale: 1,
+      offsetX: 50, // difference between mousedown and mousemove X
+      offsetY: 50, // difference between mousedown and mousemove Y
+    });
   });
 });

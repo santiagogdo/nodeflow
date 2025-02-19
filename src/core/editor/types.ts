@@ -26,9 +26,19 @@ interface AddPortParams {
  * Configuration options for the editor's background grid.
  */
 export interface GridConfig {
+  /** If true, the grid will be locked in place instead of moving with the viewport. */
+  locked?: boolean;
+
+  /** If true, crosses will be displayed on the grid. */
   showCrosses?: boolean;
+
+  /** If true, dots will be displayed on the grid. */
   showDots?: boolean;
+
+  /** If true, major lines will be displayed on the grid. */
   showMajorLines?: boolean;
+
+  /** If true, minor lines will be displayed on the grid. */
   showMinorLines?: boolean;
 
   /** The size of grid elements in pixels:

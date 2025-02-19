@@ -74,11 +74,19 @@ export class EditorDomEvents {
       this.backgroundCanvas.height = backgroundDisplayH;
 
       const backgroundRenderer = this.editor.getBackgroundRenderer();
-      backgroundRenderer.render({
-        scale: this.editor.getScale(),
-        offsetX: this.editor.getOffsetX(),
-        offsetY: this.editor.getOffsetY(),
-      });
+      if (!this.editor.editorConfig?.grid?.locked) {
+        backgroundRenderer.render({
+          scale: this.editor.getScale(),
+          offsetX: this.editor.getOffsetX(),
+          offsetY: this.editor.getOffsetY(),
+        });
+      } else {
+        backgroundRenderer.render({
+          scale: 1,
+          offsetX: 0,
+          offsetY: 0,
+        });
+      }
     }
   }
 
@@ -202,11 +210,14 @@ export class EditorDomEvents {
       this.editor.render();
 
       // Update background
-      this.editor.getBackgroundRenderer().render({
-        scale: this.editor.getScale(),
-        offsetX: this.editor.getOffsetX(),
-        offsetY: this.editor.getOffsetY(),
-      });
+      if (!this.editor.editorConfig?.grid?.locked) {
+        this.editor.getBackgroundRenderer().render({
+          scale: this.editor.getScale(),
+          offsetX: this.editor.getOffsetX(),
+          offsetY: this.editor.getOffsetY(),
+        });
+      }
+
       return;
     }
 
@@ -247,10 +258,12 @@ export class EditorDomEvents {
     this.editor.setOffsetY(currentOffsetY + (afterZoom.y - beforeZoom.y) * scale);
 
     // Update background
-    this.editor.getBackgroundRenderer().render({
-      scale: this.editor.getScale(),
-      offsetX: this.editor.getOffsetX(),
-      offsetY: this.editor.getOffsetY(),
-    });
+    if (!this.editor.editorConfig?.grid?.locked) {
+      this.editor.getBackgroundRenderer().render({
+        scale: this.editor.getScale(),
+        offsetX: this.editor.getOffsetX(),
+        offsetY: this.editor.getOffsetY(),
+      });
+    }
   }
 }

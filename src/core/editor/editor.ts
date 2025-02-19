@@ -497,6 +497,14 @@ export class Editor {
     return this.backgroundRenderer;
   }
 
+  public getCanvas() {
+    return this.canvas;
+  }
+
+  public getBackgroundCanvas() {
+    return this.backgroundCanvas;
+  }
+
   /**
    * Picks a random point *in screen coordinates* within the visible canvas,
    * converts it to *world coordinates*, and returns it.
