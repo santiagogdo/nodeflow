@@ -1,6 +1,8 @@
 # Contributing to Nodeflow
 
-Thank you for considering contributing to Nodeflow! Your help is greatly appreciated. Whether it's reporting a bug, suggesting a feature, or submitting a pull request, your contributions will make Nodeflow better for everyone.
+Thank you for considering contributing to Nodeflow! Your help is greatly
+appreciated. Whether it's reporting a bug, suggesting a feature, or submitting a
+pull request, your contributions will make Nodeflow better for everyone.
 
 ## Table of contents
 
@@ -15,7 +17,9 @@ Thank you for considering contributing to Nodeflow! Your help is greatly appreci
 
 ## Code of conduct
 
-Please note that this project is released with a [Code of conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
+Please note that this project is released with a
+[Code of conduct](CODE_OF_CONDUCT.md). By participating in this project you
+agree to abide by its terms.
 
 ## How can I contribute?
 
@@ -24,7 +28,8 @@ Please note that this project is released with a [Code of conduct](CODE_OF_CONDU
 If you find a bug in Nodeflow, please follow these steps:
 
 1. **Search existing issues:**
-   - Check the [issues](https://github.com/santiagogdo/nodeflow/issues) to see if the bug has already been reported.
+   - Check the [issues](https://github.com/santiagogdo/nodeflow/issues) to see
+     if the bug has already been reported.
 
 2. **Open a new issue:**
    - If the bug is new, open an issue and include:
@@ -50,7 +55,8 @@ If you have an idea for a new feature or enhancement:
 
 Pull requests are welcome! Here's how you can contribute:
 
-For new features or major changes, please start a new discussion on the [discussions](https://github.com/santiagogdo/nodeflow/discussions) page.
+For new features or major changes, please start a new discussion on the
+[discussions](https://github.com/santiagogdo/nodeflow/discussions) page.
 
 For bug fixes, quality of life improvements, and documentation updates:
 
@@ -83,8 +89,10 @@ For bug fixes, quality of life improvements, and documentation updates:
 7. **Open a pull request:**
    - Navigate to the original repository and click "New Pull Request."
    - Link related issues if any.
-   - Use a descriptive title and provide a clear description of your changes. For example:
-     - Use a prefix to indicate the type of change: `[FIX/FEATURE/IMPROVEMENT/DOC]`
+   - Use a descriptive title and provide a clear description of your changes.
+     For example:
+     - Use a prefix to indicate the type of change:
+       `[FIX/FEATURE/IMPROVEMENT/DOC]`
 
      ```
      [FIX] Canvas element not being responsive
@@ -106,45 +114,71 @@ For bug fixes, quality of life improvements, and documentation updates:
    cd nodeflow
    ```
 
-3. **Install dependencies:**
+3. **Install Deno 2.9.7 or newer and cache the development tools:**
 
    ```bash
-   npm ci
+   deno install --frozen
    ```
+
+   Deno caches tools globally; the project does not use `node_modules`. Keep
+   explicit `npm:` imports in the Playwright config and browser tests so worker
+   subprocesses resolve the same pinned package without a local dependency
+   directory.
 
 4. **Run the development server:**
 
-   Run a maintained example directly:
+   Run the workbench with automatic rebuild and browser reload:
 
    ```bash
-   npm run example basic
+   deno task dev
    ```
+
+   Deno's native `serve --watch` handles file watching and restarts. The dev
+   entry builds the workbench before serving and adds browser reload; the
+   preview handler only serves built files. To change the port or other server
+   flags, use the direct `deno serve` command in the README; flags must precede
+   the script path.
 
 5. **Run tests:**
 
    ```bash
-   npm run check
+   deno task check
    ```
 
-   `npm run check` typechecks source, examples, and tests, runs the suite once, builds the package, and verifies ESM/CommonJS and TypeScript consumers. CI runs these checks on pull requests and pushes to the main branches. Use `npm run test:watch` during development.
+   `deno task check` typechecks source, examples, and tests, runs the suite
+   once, builds the package, and verifies ESM/CommonJS and TypeScript consumers.
+   CI runs these checks on pull requests and pushes to the main branches. Use
+   `deno task test:watch` during development.
 
    You can check coverage with:
 
    ```bash
-   npm run coverage
+   deno task coverage
    ```
 
-   It will generate a `coverage` folder with the test results.
+   It generates `coverage/html/index.html` for the headless tests. Canvas, DOM,
+   and composition checks run in real browsers with `deno task test:browser`
+   (first run `deno task test:browser:install`).
+
+   Deno owns the server, bundling, type checks, native tests, and coverage.
+   TypeScript is used only for npm declaration generation and consumer
+   validation; Playwright drives browser tests. There are no runtime
+   dependencies. Node.js 22 or 24 and npm are needed for the offline npm package
+   check and publishing.
 
 ## Additional notes
 
 - **Documentation:**
-  - Comprehensive documentation is available [here](./docs). Contributions to docs are welcome!
+  - Comprehensive documentation is available [here](./docs). Contributions to
+    docs are welcome!
 
 - **NPM package:**
-  - Ensure that changes are compatible with the npm package. Follow [npm guidelines](https://docs.npmjs.com/) for publishing updates.
+  - Ensure that changes are compatible with the npm package. Follow
+    [npm guidelines](https://docs.npmjs.com/) for publishing updates.
 
 - **Feedback:**
-  - Feel free to reach out via [issues](https://github.com/santiagogdo/nodeflow/issues) for any questions or feedback.
+  - Feel free to reach out via
+    [issues](https://github.com/santiagogdo/nodeflow/issues) for any questions
+    or feedback.
 
 Thank you for contributing to Nodeflow! 🙏

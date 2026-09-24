@@ -21,4 +21,5 @@
 
 ## Branch Handling
 
-- If the current branch is `main` or `develop`, create a new branch before opening a PR.
+- If the current branch is `main` or `develop`, create a new branch before
+  opening a PR.

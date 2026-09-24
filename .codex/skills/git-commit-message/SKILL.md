@@ -7,7 +7,8 @@ description: Generate a Conventional Commit message for staged changes. Use when
 
 ## Overview
 
-Use the `git-workflow` skill and run the **Commit Message Only** workflow. Do not commit or push.
+Use the `git-workflow` skill and run the **Commit Message Only** workflow. Do
+not commit or push.
 
 ## Steps
 

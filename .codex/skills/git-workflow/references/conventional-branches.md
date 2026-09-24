@@ -16,9 +16,11 @@
 
 ## Rules
 
-- The branch name should be descriptive yet concise, clearly indicating the purpose of the work.
+- The branch name should be descriptive yet concise, clearly indicating the
+  purpose of the work.
 - Use lowercase letters, numbers, and hyphens.
-- Avoid special characters, underscores, or spaces. Dots are allowed for release branches (e.g., `release/v1.2.0`).
+- Avoid special characters, underscores, or spaces. Dots are allowed for release
+  branches (e.g., `release/v1.2.0`).
 - No consecutive, leading, or trailing hyphens/dots.
 - Include ticket numbers if provided (e.g., `feature/issue-123-add-login`).
 

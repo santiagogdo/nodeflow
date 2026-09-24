@@ -13,10 +13,13 @@
 ## Rules
 
 - Use `feat` for new features and `fix` for bug fixes.
-- Other types are allowed (examples: `build`, `chore`, `ci`, `docs`, `style`, `refactor`, `perf`, `test`).
+- Other types are allowed (examples: `build`, `chore`, `ci`, `docs`, `style`,
+  `refactor`, `perf`, `test`).
 - Scope is optional and uses parentheses: `feat(parser): ...`.
-- Indicate breaking changes with `!` before `:` or with a footer: `BREAKING CHANGE: ...`.
-- Footers use `Token: value` or `Token #value` format; tokens use `-` instead of spaces.
+- Indicate breaking changes with `!` before `:` or with a footer:
+  `BREAKING CHANGE: ...`.
+- Footers use `Token: value` or `Token #value` format; tokens use `-` instead of
+  spaces.
 
 ### Examples
 

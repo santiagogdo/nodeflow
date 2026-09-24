@@ -1,0 +1,47 @@
+{
+  "nodeModulesDir": "none",
+  "compilerOptions": {
+    "lib": [
+      "es2022",
+      "dom",
+      "dom.iterable",
+      "deno.ns"
+    ],
+    "strict": true,
+    "noUncheckedIndexedAccess": false
+  },
+  "imports": {
+    "@playwright/test": "npm:@playwright/test@1.63.0",
+    "typescript": "npm:typescript@6.0.3"
+  },
+  "tasks": {
+    "dev": "deno serve --host=127.0.0.1 --port=5174 --watch=src,examples/workbench --no-clear-screen --allow-read --allow-write=dist-demo --allow-run=deno scripts/dev.ts",
+    "example": "deno task dev",
+    "preview": "deno serve --host=127.0.0.1 --port=5174 --allow-read=dist-demo scripts/serve.ts",
+    "build": "deno run --allow-read --allow-env --allow-write=dist --allow-run=deno scripts/build.ts",
+    "build:examples": "deno run --allow-read --allow-write=dist-demo --allow-run=deno scripts/build.ts examples",
+    "build:browser": "deno run --allow-read --allow-write=dist-demo --allow-run=deno scripts/build.ts browser",
+    "typecheck": "deno check src/index.ts src/runtime/index.ts src/layout/index.ts src/layout/worker.ts examples/workbench/main.ts scripts/*.ts tests/*.test.ts tests/browser/*.ts playwright.config.ts",
+    "test": "deno test tests/*.test.ts",
+    "test:watch": "deno test --watch tests/*.test.ts",
+    "coverage": "deno test --coverage=coverage tests/*.test.ts && deno coverage coverage --exclude=tests --html",
+    "check": "deno task typecheck && deno task test && deno task build && deno task test:package",
+    "test:package": "deno run -A scripts/check-package.mjs",
+    "test:browser": "deno run -A npm:@playwright/test@1.63.0/cli test",
+    "test:browser:install": "deno run -A npm:@playwright/test@1.63.0/cli install --with-deps chromium firefox webkit"
+  },
+  "fmt": {
+    "exclude": [
+      "dist",
+      "dist-demo",
+      "coverage",
+      "deno.lock"
+    ]
+  },
+  "exclude": [
+    "dist",
+    "dist-demo",
+    "coverage",
+    "node_modules"
+  ]
+}

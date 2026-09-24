@@ -7,7 +7,9 @@ description: Git workflow. Use when working in this repo and asked to create bra
 
 ## Overview
 
-Use this skill to perform git/gh tasks in this repo while enforcing Conventional Commits and Conventional Branch naming. Default PR base is `develop` unless the user specifies otherwise.
+Use this skill to perform git/gh tasks in this repo while enforcing Conventional
+Commits and Conventional Branch naming. Default PR base is `develop` unless the
+user specifies otherwise.
 
 ## Workflow Decision Tree
 
@@ -18,14 +20,20 @@ Use this skill to perform git/gh tasks in this repo while enforcing Conventional
 ## Core Rules
 
 1. Never stage files; operate only on already staged changes.
-2. Always inspect staged changes; if nothing is staged, ask the user to stage files.
-3. Use Conventional Commits for commit messages. See `references/conventional-commits.md`.
-4. Use Conventional Branch naming when creating a branch. See `references/conventional-branches.md`.
+2. Always inspect staged changes; if nothing is staged, ask the user to stage
+   files.
+3. Use Conventional Commits for commit messages. See
+   `references/conventional-commits.md`.
+4. Use Conventional Branch naming when creating a branch. See
+   `references/conventional-branches.md`.
 5. Default PR base is `develop`. If unsure, ask the user.
-6. Use `gh` to open PRs; PR title is the commit subject line; PR body is detailed.
-7. If a git/gh command requires elevated permissions (network, non-workspace paths), request approval.
+6. Use `gh` to open PRs; PR title is the commit subject line; PR body is
+   detailed.
+7. If a git/gh command requires elevated permissions (network, non-workspace
+   paths), request approval.
 8. Never push directly to `main`, `master`, or `develop`.
-9. If currently on `main`, `master`, or `develop`, create a new Conventional Branch before any commit+push workflow.
+9. If currently on `main`, `master`, or `develop`, create a new Conventional
+   Branch before any commit+push workflow.
 
 ## Workflows
 
@@ -38,7 +46,8 @@ Use this skill to perform git/gh tasks in this repo while enforcing Conventional
 ### Commit + Push (Staged Changes Only)
 
 - Confirm staged-only rule is satisfied.
-- If the current branch is `main`, `master`, or `develop`, create a new branch using Conventional Branch naming before committing.
+- If the current branch is `main`, `master`, or `develop`, create a new branch
+  using Conventional Branch naming before committing.
 - Create the Conventional Commit message, then run `git commit`.
 - Push the current branch with `git push`.
 - Never push directly to `main`, `master`, or `develop`.
@@ -46,12 +55,16 @@ Use this skill to perform git/gh tasks in this repo while enforcing Conventional
 
 ### PR (Open or Draft)
 
-- If the current branch is `main`, `master`, or `develop`, create a new branch using Conventional Branch naming.
+- If the current branch is `main`, `master`, or `develop`, create a new branch
+  using Conventional Branch naming.
 - Ensure a commit exists; if not, run **Commit + Push** first.
-- Create the PR with `gh pr create --base develop --title "<commit title>" --body "<detailed description>"`.
+- Create the PR with
+  `gh pr create --base develop --title "<commit title>" --body "<detailed description>"`.
 - Add `--draft` for a draft PR.
-- PR body should include: summary, key changes, tests (or “not run”), risks/notes, and screenshots when relevant.
-- Use `assets/pr-template.md` as the default PR body template and fill in all sections.
+- PR body should include: summary, key changes, tests (or “not run”),
+  risks/notes, and screenshots when relevant.
+- Use `assets/pr-template.md` as the default PR body template and fill in all
+  sections.
 
 ## References
 

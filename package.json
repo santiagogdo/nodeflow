@@ -4,50 +4,99 @@
     "email": "santiagogdo.hybrid891@passinbox.com"
   },
   "name": "nodeflow",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "files": [
     "dist",
-    "docs"
+    "docs/README.md",
+    "docs/performance.md"
   ],
-  "main": "./dist/nodeflow.umd.cjs",
+  "main": "./dist/nodeflow.cjs",
   "module": "./dist/nodeflow.js",
   "exports": {
     ".": {
       "import": {
-        "types": "./dist/nodeflow.d.ts",
+        "types": "./dist/types/index.d.ts",
         "default": "./dist/nodeflow.js"
       },
       "require": {
-        "types": "./dist/nodeflow.d.cts",
-        "default": "./dist/nodeflow.umd.cjs"
+        "types": "./dist/types/index.d.cts",
+        "default": "./dist/nodeflow.cjs"
       }
     },
-    "./style.css": "./dist/nodeflow.css"
+    "./core": {
+      "import": {
+        "types": "./dist/types/core/index.d.ts",
+        "default": "./dist/core.js"
+      },
+      "require": {
+        "types": "./dist/types/core/index.d.cts",
+        "default": "./dist/core.cjs"
+      }
+    },
+    "./runtime": {
+      "import": {
+        "types": "./dist/types/runtime/index.d.ts",
+        "default": "./dist/runtime.js"
+      },
+      "require": {
+        "types": "./dist/types/runtime/index.d.cts",
+        "default": "./dist/runtime.cjs"
+      }
+    },
+    "./layout": {
+      "import": {
+        "types": "./dist/types/layout/index.d.ts",
+        "default": "./dist/layout.js"
+      },
+      "require": {
+        "types": "./dist/types/layout/index.d.cts",
+        "default": "./dist/layout.cjs"
+      }
+    },
+    "./layout-worker": "./dist/layout-worker.js",
+    "./package.json": "./package.json",
+    "./presets": {
+      "import": {
+        "types": "./dist/types/presets/index.d.ts",
+        "default": "./dist/esm/presets/index.js"
+      },
+      "require": {
+        "types": "./dist/types/presets/index.d.cts",
+        "default": "./dist/cjs/presets/index.cjs"
+      }
+    },
+    "./presets/unstyled": {
+      "import": {
+        "types": "./dist/types/presets/unstyled.d.ts",
+        "default": "./dist/esm/presets/unstyled.js"
+      },
+      "require": {
+        "types": "./dist/types/presets/unstyled.d.cts",
+        "default": "./dist/cjs/presets/unstyled.cjs"
+      }
+    }
   },
-  "types": "dist/nodeflow.d.ts",
+  "types": "./dist/types/index.d.ts",
   "scripts": {
-    "example": "node ./examples/run-example.js",
-    "dev": "vite",
-    "build": "tsc -p tsconfig.json && vite build && node scripts/build-declarations.mjs",
-    "preview": "vite preview --host",
-    "test": "vitest run",
-    "test:watch": "vitest watch",
-    "coverage": "vitest run --coverage",
-    "typecheck": "tsc -p tsconfig.check.json",
-    "check": "npm run typecheck && npm test && npm run build && npm run test:package",
-    "test:package": "node scripts/check-package.mjs"
-  },
-  "devDependencies": {
-    "@vitest/coverage-v8": "^3.0.5",
-    "jsdom": "^26.0.0",
-    "typescript": "^5.7.3",
-    "vite": "^6.1.0",
-    "vite-plugin-dts": "^4.5.0",
-    "vitest": "^3.0.5",
-    "vitest-canvas-mock": "^0.3.3"
+    "example": "deno task example",
+    "dev": "deno task dev",
+    "build": "deno task build",
+    "preview": "deno task preview",
+    "test": "deno task test",
+    "test:watch": "deno task test:watch",
+    "coverage": "deno task coverage",
+    "typecheck": "deno task typecheck",
+    "check": "deno task check",
+    "test:package": "deno task test:package",
+    "test:browser": "deno task test:browser",
+    "test:browser:install": "deno task test:browser:install",
+    "build:examples": "deno task build:examples"
   },
   "sideEffects": [
-    "**/*.css"
-  ]
+    "./dist/layout-worker.js",
+    "./dist/esm/layout/worker.js",
+    "./dist/cjs/layout/worker.cjs"
+  ],
+  "description": "A zero-dependency, framework-independent canvas graph editor, document model, runner, and layout engine."
 }

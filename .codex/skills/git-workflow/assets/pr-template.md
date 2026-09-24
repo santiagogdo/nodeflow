@@ -4,12 +4,18 @@
 
 ### Type
 
-- - [ ] Feature
-- - [ ] Bug fix
-- - [ ] Documentation
-- - [ ] Chore
-- - [ ] Refactor
-- - [ ] Other:
+-
+  - [ ] Feature
+-
+  - [ ] Bug fix
+-
+  - [ ] Documentation
+-
+  - [ ] Chore
+-
+  - [ ] Refactor
+-
+  - [ ] Other:
 
 ### Rationale / Motivation
 
@@ -29,9 +35,12 @@
 
 ### Regression Risk
 
-- - [ ] Low
-- - [ ] Medium
-- - [ ] High
+-
+  - [ ] Low
+-
+  - [ ] Medium
+-
+  - [ ] High
 
 Mitigation:
 

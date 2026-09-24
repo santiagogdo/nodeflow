@@ -19,7 +19,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npm run check
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+      - run: deno install --frozen
+      - run: deno task check
+      - run: test ! -e node_modules
       - run: npm pack --dry-run
+
+  browsers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+      - run: deno install --frozen
+      - run: deno task test:browser:install
+      - run: deno task test:browser
+      - run: test ! -e node_modules

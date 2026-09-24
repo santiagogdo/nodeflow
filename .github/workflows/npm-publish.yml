@@ -14,8 +14,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: lts/jod
-      - run: npm ci
-      - run: npm run check
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+      - run: deno install --frozen
+      - run: deno task check
 
   publish-npm:
     needs: test
@@ -29,8 +32,11 @@ jobs:
         with:
           node-version: lts/jod
           registry-url: https://registry.npmjs.org/
-      - run: npm ci
-      - run: npm run build
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+      - run: deno install --frozen
+      - run: deno task build
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{secrets.npm_token}}

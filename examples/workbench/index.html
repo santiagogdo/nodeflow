@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#20242c" />
+    <meta
+      name="description"
+      content="Nodeflow — a zero-dependency canvas graph editor."
+    />
+    <link rel="stylesheet" href="./style.css" />
+    <title>Nodeflow — Order processing</title>
+  </head>
+  <body>
+    <div class="workbench" id="app">
+      <header class="appbar">
+        <a class="wordmark" href="?example=pipeline" aria-label="Nodeflow home"
+        ><svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 6h6v6H5zM13 14h6v6h-6zM8 12v5h5" /></svg
+          >Nodeflow</a>
+        <nav class="examples" aria-label="Examples" id="example-tabs"></nav>
+        <select
+          class="mobile-examples"
+          id="example-select"
+          aria-label="Choose example"
+        ></select>
+        <div class="app-actions">
+          <button class="quiet desktop-only" id="import">Import</button
+          ><button class="quiet desktop-only" id="export">Export</button
+          ><button class="run" id="run">
+            <span aria-hidden="true">▷</span> Run
+          </button>
+        </div>
+      </header>
+      <div class="toolbar">
+        <div class="document-title">
+          <button
+            id="back"
+            class="icon-button"
+            title="Back to parent graph"
+            aria-label="Back to parent graph"
+            hidden
+          >
+            ←</button
+          ><input
+            id="graph-title"
+            aria-label="Graph name"
+            spellcheck="false"
+          /><span class="edit-mark" aria-hidden="true">⌁</span>
+        </div>
+        <div class="editing-actions">
+          <button
+            id="undo"
+            class="icon-button"
+            aria-label="Undo"
+            title="Undo (⌘ Z)"
+          >
+            ↶</button
+          ><button
+            id="redo"
+            class="icon-button"
+            aria-label="Redo"
+            title="Redo (⌘ ⇧ Z)"
+          >
+            ↷</button
+          ><span class="divider"></span
+          ><button id="layout" title="Arrange nodes automatically">
+            <span aria-hidden="true">⊞</span> Auto layout</button
+          ><button id="group" class="desktop-only">
+            <span aria-hidden="true">▧</span> Group
+          </button>
+        </div>
+        <div class="viewport-actions">
+          <button id="zoom" title="Reset zoom">100%</button
+          ><button id="fit" aria-label="Fit graph in view">
+            <span aria-hidden="true">⛶</span> Fit
+          </button>
+        </div>
+      </div>
+      <aside class="library panel" id="library" aria-label="Node library">
+        <div class="panel-heading">
+          <h2>Node library</h2>
+          <button
+            class="close-panel icon-button"
+            aria-label="Close node library"
+          >
+            ×
+          </button>
+        </div>
+        <label class="search"
+        ><svg viewBox="0 0 20 20" aria-hidden="true">
+            <circle cx="8" cy="8" r="5" />
+            <path d="m12 12 5 5" /></svg
+          ><input
+            id="node-search"
+            placeholder="Find a node…"
+            aria-label="Find a node"
+        /></label>
+        <div id="library-items" class="library-items"></div>
+        <div class="library-footer">
+          <button id="gallery-link">
+            <span aria-hidden="true">⊞</span> Open control gallery
+            <span aria-hidden="true">↗</span></button
+          ><button id="benchmark-link">
+            <span aria-hidden="true">⌁</span> Explore a large graph
+            <span aria-hidden="true">↗</span></button
+          ><span class="library-caption">A place to connect your ideas.</span>
+        </div>
+      </aside>
+      <main id="graph" aria-label="Graph canvas"></main>
+      <aside
+        class="inspector panel"
+        id="inspector"
+        aria-label="Selection inspector"
+      >
+        <div class="panel-heading">
+          <h2>Selection</h2>
+          <button
+            class="close-panel icon-button"
+            aria-label="Close selection inspector"
+          >
+            ×
+          </button>
+        </div>
+        <div id="selection-details"></div>
+        <div class="inspector-footer">
+          <kbd>delete</kbd> to remove selection
+        </div>
+      </aside>
+      <section class="output panel" id="output" aria-label="Run output">
+        <div class="output-header">
+          <div class="output-tabs" role="tablist" aria-label="Run information">
+            <button
+              id="output-tab"
+              role="tab"
+              aria-selected="true"
+              data-output="output"
+            >
+              Output</button
+            ><button role="tab" aria-selected="false" data-output="log">
+              Run log</button
+            ><button role="tab" aria-selected="false" data-output="problems">
+              Problems <span id="problem-count"></span>
+            </button>
+          </div>
+          <span class="run-status" id="run-status">Ready to run</span
+          ><button class="close-panel icon-button" aria-label="Close output">
+            ×
+          </button>
+        </div>
+        <div
+          class="output-content"
+          id="output-content"
+          role="tabpanel"
+          aria-labelledby="output-tab"
+        ></div>
+      </section>
+      <footer class="statusbar">
+        <span id="graph-count">5 nodes, 4 connections</span
+        ><span id="save-state">Saved locally</span
+        ><span class="interaction-hint"
+          >Scroll to zoom <b>·</b> Space to pan</span
+        >
+      </footer>
+      <nav class="mobile-dock" aria-label="Workbench panels">
+        <button data-panel="library">
+          <span aria-hidden="true">⊞</span>Nodes</button
+        ><button data-panel="inspector">
+          <span aria-hidden="true">◇</span>Selection</button
+        ><button data-panel="output" class="active">
+          <span aria-hidden="true">▤</span>Output</button
+        ><button data-panel="view">
+          <span aria-hidden="true">⛶</span>View
+        </button>
+      </nav>
+      <section
+        class="view-panel panel"
+        id="view"
+        aria-label="View and document actions"
+      >
+        <div class="panel-heading">
+          <h2>View & document</h2>
+          <button class="close-panel icon-button" aria-label="Close view panel">
+            ×
+          </button>
+        </div>
+        <div class="view-actions">
+          <label class="node-appearance-label" for="node-appearance">Node appearance</label>
+          <select id="node-appearance">
+            <option value="glass">Liquid glass</option>
+            <option value="flat">Flat graphite</option>
+            <option value="paper">Light paper</option>
+          </select>
+          <button id="node-motion" aria-pressed="false">Reduce node motion</button>
+          <label class="node-appearance-label" for="link-appearance">Connections & ports</label>
+          <select id="link-appearance">
+            <option value="clean">Clean</option>
+            <option value="contrast">High contrast</option>
+          </select>
+          <button id="link-motion" aria-pressed="false">Reduce connection & port motion</button>
+          <button id="zoom-out">− Zoom out</button
+          ><button id="zoom-in">+ Zoom in</button
+          ><button id="select-mode" aria-pressed="false">Select area</button
+          ><button id="mobile-group">Group selection</button
+          ><button id="mobile-import">Import JSON</button
+          ><button id="mobile-export">Export JSON</button
+          ><button id="reset">Reset this example</button
+          ><button id="measure">Measure rendering</button>
+        </div>
+        <p>
+          Drag a node’s header to move it. Tap two ports to connect them. Pinch
+          to zoom; drag the background to pan.
+        </p>
+      </section>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <input type="file" id="file-input" accept="application/json,.json" hidden />
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
