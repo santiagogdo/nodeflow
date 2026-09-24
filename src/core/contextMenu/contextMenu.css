@@ -1,80 +1,33 @@
-#canvas-context-menu {
+.nodeflow-context-menu {
   position: absolute;
-  z-index: 100;
-  opacity: 0;
+  z-index: 2;
+  min-width: 120px;
+  padding: 4px;
   border: 1px solid #3f3b52;
   border-radius: 5px;
-  background-color: #1e1e2b;
-  box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+  background: #1e1e2b;
+  box-shadow: 0 4px 12px #0003;
 }
-
-ul {
-  list-style-type: none;
-  margin: 0;
-  padding: 0;
+.nodeflow-context-menu[hidden] {
+  display: none;
 }
-
-.context-menu-item {
-  padding: 10px;
+.nodeflow-context-menu > button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 3px;
+  padding: 8px 12px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
-
-.scale-in-center {
-  -webkit-animation: scale-in-center 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
-  animation: scale-in-center 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+.nodeflow-context-menu > button:hover,
+.nodeflow-context-menu > button:focus-visible {
+  background: #3f3b52;
 }
-
-.scale-out-center {
-  -webkit-animation: scale-out-center 0.15s cubic-bezier(0.55, 0.085, 0.68, 0.53) both;
-  animation: scale-out-center 0.15s cubic-bezier(0.55, 0.085, 0.68, 0.53) both;
-}
-
-@-webkit-keyframes scale-in-center {
-  0% {
-    -webkit-transform: scale(0);
-    transform: scale(0);
-    opacity: 0;
-  }
-  100% {
-    -webkit-transform: scale(1);
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-@keyframes scale-in-center {
-  0% {
-    -webkit-transform: scale(0);
-    transform: scale(0);
-    opacity: 0;
-  }
-  100% {
-    -webkit-transform: scale(1);
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@-webkit-keyframes scale-out-center {
-  0% {
-    -webkit-transform: scale(1);
-    transform: scale(1);
-    opacity: 1;
-  }
-  100% {
-    -webkit-transform: scale(0);
-    transform: scale(0);
-    opacity: 0;
-  }
-}
-@keyframes scale-out-center {
-  0% {
-    -webkit-transform: scale(1);
-    transform: scale(1);
-    opacity: 1;
-  }
-  100% {
-    -webkit-transform: scale(0);
-    transform: scale(0);
-    opacity: 0;
-  }
+.nodeflow-context-menu > button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

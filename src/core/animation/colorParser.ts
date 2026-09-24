@@ -6,17 +6,32 @@ interface RGBA {
 }
 
 const namedColors: { [key: string]: string } = {
-  // Add more named colors as needed
   aliceblue: '#f0f8ff',
   antiquewhite: '#faebd7',
   aqua: '#00ffff',
-  // ... (complete the list as per CSS specifications)
   rebeccapurple: '#663399',
   red: '#ff0000',
   blue: '#0000ff',
-  green: '#00ff00',
-  // Add all other CSS named colors
+  green: '#008000',
+  lime: '#00ff00',
+  black: '#000000',
+  white: '#ffffff',
+  gray: '#808080',
+  grey: '#808080',
+  silver: '#c0c0c0',
+  maroon: '#800000',
+  yellow: '#ffff00',
+  orange: '#ffa500',
+  olive: '#808000',
+  purple: '#800080',
+  fuchsia: '#ff00ff',
+  teal: '#008080',
+  navy: '#000080',
+  transparent: '#00000000',
 };
+
+const resolvedNames = new Map<string, RGBA | null>();
+let colorContext: CanvasRenderingContext2D | null | undefined;
 
 export default function parseColor(color: string): RGBA | null {
   color = color.trim().toLowerCase();
@@ -61,7 +76,7 @@ export default function parseColor(color: string): RGBA | null {
   }
 
   // RGB or RGBA
-  const rgbMatch = /^rgba?\(\s*([^\)]+)\)/.exec(color);
+  const rgbMatch = /^rgba?\(\s*([^\)]+)\)$/.exec(color);
   if (rgbMatch) {
     const parts = rgbMatch[1].split(',').map((part) => part.trim());
     if (parts.length < 3) return null;
@@ -89,13 +104,13 @@ export default function parseColor(color: string): RGBA | null {
       if (isNaN(a)) return null;
     }
 
-    if ([r, g, b].some((v) => v === null)) return null;
+    if (![r, g, b, a].every(Number.isFinite)) return null;
 
     return { r: r!, g: g!, b: b!, a };
   }
 
   // HSL or HSLA
-  const hslMatch = /^hsla?\(\s*([^\)]+)\)/.exec(color);
+  const hslMatch = /^hsla?\(\s*([^\)]+)\)$/.exec(color);
   if (hslMatch) {
     const parts = hslMatch[1].split(',').map((part) => part.trim());
     if (parts.length < 3) return null;
@@ -156,5 +171,24 @@ export default function parseColor(color: string): RGBA | null {
     return { r, g, b, a };
   }
 
+  // Let the host canvas normalize the remaining standard CSS named colors.
+  if (/^[a-z]+$/.test(color) && typeof document !== 'undefined') {
+    if (resolvedNames.has(color)) return resolvedNames.get(color)!;
+    colorContext ??= document.createElement('canvas').getContext('2d');
+    if (colorContext) {
+      colorContext.fillStyle = '#010203';
+      colorContext.fillStyle = color;
+      const first = colorContext.fillStyle;
+      colorContext.fillStyle = '#040506';
+      colorContext.fillStyle = color;
+      const normalized = colorContext.fillStyle;
+      const result =
+        first === normalized && typeof normalized === 'string' && normalized !== color
+          ? parseColor(normalized)
+          : null;
+      resolvedNames.set(color, result);
+      return result;
+    }
+  }
   return null; // Unsupported format
 }

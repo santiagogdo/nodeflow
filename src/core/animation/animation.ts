@@ -8,7 +8,7 @@ import {
   gradientInterpolator,
 } from './interpolators';
 
-export type InterpolatableValue = number | string;
+export type InterpolatableValue = number | string | number[] | GradientDefinition;
 
 export type LoopMode = 'none' | 'ping-pong' | 'wrap-around';
 
@@ -36,6 +36,8 @@ export class Animation {
 
   private startTime: number;
   private interpolator: Interpolator<any>;
+  private isPaused: boolean = false;
+  private pausedElapsed: number = 0;
 
   // Loop flags
   private loop: boolean;
@@ -44,7 +46,9 @@ export class Animation {
   constructor(options: AnimationOptions) {
     this.from = options.from;
     this.to = options.to;
-    this.duration = options.duration ?? 1000; // default 1s
+    this.duration = options.duration ?? 1000;
+    if (!Number.isFinite(this.duration) || this.duration <= 0)
+      throw new Error('Animation duration must be positive');
     this.easing = options.easing || Easing.linear;
     this.onUpdate = options.onUpdate;
     this.onComplete = options.onComplete;
@@ -68,7 +72,9 @@ export class Animation {
     } else if (this.isGradientDefinition(this.from) && this.isGradientDefinition(this.to)) {
       this.interpolator = gradientInterpolator;
     } else {
-      throw new Error(`No valid interpolator found for from="${this.from}" and to="${this.to}".`);
+      throw new Error(
+        `No valid interpolator found for from="${this.from}" and to="${this.to}".`,
+      );
     }
   }
 
@@ -76,12 +82,34 @@ export class Animation {
     return val && typeof val === 'object' && val.colorStops;
   }
 
+  public pause(): void {
+    if (!this.isPaused) {
+      this.isPaused = true;
+      this.pausedElapsed = performance.now() - this.startTime;
+    }
+  }
+
+  public resume(): void {
+    if (this.isPaused) {
+      this.isPaused = false;
+      this.startTime = performance.now() - this.pausedElapsed;
+    }
+  }
+
+  public isPausedState(): boolean {
+    return this.isPaused;
+  }
+
   /**
    * Called every frame by your animation manager.
    * @returns true if the animation is finished (not looping), false otherwise.
    */
   public update(currentTime: number): boolean {
-    const elapsed = currentTime - this.startTime;
+    if (this.isPaused) {
+      return false;
+    }
+
+    const elapsed = Math.max(0, currentTime - this.startTime);
 
     // If no loop
     if (!this.loop) {

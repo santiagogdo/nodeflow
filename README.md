@@ -1,100 +1,87 @@
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](code_of_conduct.md)
-
-![nodeflow](https://github.com/user-attachments/assets/14e40f60-1bba-45bc-b774-9b37bc001a80)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 # Nodeflow
 
-Nodeflow is a powerful and flexible yet simple library for creating and managing graphical node-based editors. It is designed to make building node-based UIs easy and intuitive, providing a wide range of features and customization options.
+Nodeflow is a small, framework-independent TypeScript library for graphical node editors. It renders nodes, ports, and connections on canvas, with configurable styles, animations, zoom, and panning.
 
-The library is designed to be flexible and can be used for things like:
-
-- Visual programming
-- Interactive automation workflows
-- Interactive data visualization
-
-## Features
-
-- **Node and Connection Management**: Easily create, manage, and connect nodes with customizable ports.
-
-- **Animation Support**: Integrate animations with a robust animation system and various easing functions.
-
-- **Style Management**: Customize component styles with a robust styling system.
-
-- **High-DPI Support**: Automatically handles high-DPI displays for clear and crisp rendering.
-
-- **Zoom and Panning**: Zoom and panning provided out-of-the-box.
-
-- **Responsive support**: The editor is responsive out-of-the-box and will adjust accordingly whenever the size of the canvas container changes.
-
-- **Context Menu**: Built-in customizable context menu.
-
-- **Serialize/Deserialize editor state**: Serialize the current editor state to JSON, or define the initial state using JSON.
-
-- **FPS Counter**: Built-in FPS counter. You can turn it on during development to monitor the performance of the editor.
+The current development version is being stabilized. The supported editor workflow is creating, connecting, moving, styling, deleting, saving, restoring, and disposing an editor. Undo/redo, automatic layout, rich HTML node content, and a complete keyboard editing interface are not implemented.
 
 ## Installation
 
-1. **Install Nodeflow:**
-
-   ```bash
-   npm install nodeflow
-   ```
-
-2. **Define a container for the editor:**
-
-   ```html
-   <div id="canvas-container"></div>
-   ```
-
-3. **Import and instantiate the editor:**
-
-   Import the `Editor` class, instantiate it, and pass the container element to the constructor.
-
-   ```typescript
-   import { Editor } from 'nodeflow';
-
-   window.addEventListener('DOMContentLoaded', () => {
-     const container = document.getElementById('canvas-container');
-     const editor = new Editor(container);
-   });
-   ```
-
-## Running examples:
-
-You can find examples for how to use the library in the `examples` folder.
-
-To run the examples locally:
-
-1. Clone the repository
-2. Install dependencies: `npm install`
-3. Run an example:
-
-```bash
-npm run example {example-folder-name}
+```sh
+npm install nodeflow
 ```
 
-For example:
+Give the editor a container with an explicit height, then import the library and its context-menu stylesheet:
 
-```bash
+```html
+<div id="canvas-container" style="height: 500px"></div>
+```
+
+```typescript
+import { Editor } from 'nodeflow';
+import 'nodeflow/style.css';
+
+const container = document.getElementById('canvas-container');
+if (!container) throw new Error('Editor container not found');
+
+const editor = new Editor(container, {
+  grid: { spacing: 20, showDots: true, color: '#77718e' },
+});
+
+const source = editor.addNode({
+  label: 'Source',
+  position: { x: 60, y: 80 },
+  ports: [{ type: 'output', position: { x: 0, y: 25 } }],
+});
+const target = editor.addNode({
+  label: 'Destination',
+  position: { x: 300, y: 180 },
+  ports: [{ type: 'input', position: { x: 0, y: 25 } }],
+});
+const connection = editor.connectPorts(source.ports[0], target.ports[0]);
+
+// JSON includes IDs, graph data, styles, and viewport.
+const saved = editor.serialize();
+editor.deserialize(saved);
+
+// Call when the containing view unmounts.
+editor.destroy();
+```
+
+## Supported features
+
+- Nodes, input/output ports, unique connections, and consistent deletion.
+- Per-component styles, gradients, hover transitions, and looping animations.
+- High-DPI rendering and container resizing through `ResizeObserver`.
+- Pointer dragging, panning, cursor-centered zoom, and Escape to cancel a connection.
+- Independent, customizable context menus for multiple editor instances.
+- Versioned JSON persistence, validated before replacing the current graph.
+- Rendering on changes and during animations; idle editors stop requesting frames.
+- Explicit cleanup of frames, browser listeners, observers, and animations.
+- Optional FPS display measuring rendered frames while the editor is active.
+
+## Examples and development
+
+```sh
+npm ci
+npm run example basic
+npm run example styling-components
 npm run example animating-connections
 ```
 
-## Documentation
+Each example includes save/load, clear, and editor recreation controls. Graphs saved by an example stay in that browser's local storage.
 
-Comprehensive documentation is available to help you get started and make the most out of Nodeflow. [Read the docs](./docs).
+```sh
+npm run check       # typecheck, test, build, verify package consumers
+npm run test:watch
+npm run coverage
+```
 
-<!-- TODO: Create detailed documentation -->
+See the [API and integration guide](docs/README.md) and [contribution guidelines](CONTRIBUTING.md).
 
-## Contributing
+## Help and license
 
-Contributions are welcome! Please see our [contribution guidelines](CONTRIBUTING.md) for more information.
+Report problems in [issues](https://github.com/santiagogdo/nodeflow/issues) or ask questions in [discussions](https://github.com/santiagogdo/nodeflow/discussions).
 
-## How to get help
-
-If you encounter an issue that is not already [reported](https://github.com/santiagogdo/nodeflow/issues), please open a new issue.
-
-If you have any questions, feel free to ask in the [discussions](https://github.com/santiagogdo/nodeflow/discussions) page.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).

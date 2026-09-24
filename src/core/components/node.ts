@@ -34,8 +34,15 @@ export interface StylableNodeParams extends StylableComponentParams<NodeStyle> {
 export class Node extends Component<NodeStyle> {
   public componentType = ComponentType.Node;
   public data: Record<string, unknown>;
-  public ports: Port[];
-  public label?: string;
+  public ports: Array<Port>;
+  private _label = '';
+  public get label(): string {
+    return this._label;
+  }
+  public set label(value: string) {
+    this._label = value;
+    this.markDirty();
+  }
   private labelPosition: { x: number; y: number };
 
   constructor(params: StylableNodeParams) {
@@ -43,6 +50,9 @@ export class Node extends Component<NodeStyle> {
     this.data = params.data || {};
     this.label = params.label || '';
     this.ports = params.ports || [];
+    this.ports.forEach((port) => {
+      port.node = this;
+    });
     this.labelPosition = params.labelPosition || { x: 8, y: 20 };
     this.styleManager.setNodeStyle(this, params.style);
   }
@@ -54,13 +64,13 @@ export class Node extends Component<NodeStyle> {
     ctx: CanvasRenderingContext2D,
     gradDef: GradientDefinition,
     width: number,
-    height: number
+    height: number,
   ): CanvasGradient {
     const grad = ctx.createLinearGradient(
       this.position.x + gradDef.x0! * width,
       this.position.y + gradDef.y0! * height,
       this.position.x + gradDef.x1! * width,
-      this.position.y + gradDef.y1! * height
+      this.position.y + gradDef.y1! * height,
     );
 
     gradDef.colorStops.forEach((stop) => {
@@ -77,7 +87,7 @@ export class Node extends Component<NodeStyle> {
     ctx: CanvasRenderingContext2D,
     gradDef: GradientDefinition,
     width: number,
-    height: number
+    height: number,
   ): CanvasGradient {
     const grad = ctx.createRadialGradient(
       this.position.x + gradDef.x0! * width,
@@ -85,7 +95,7 @@ export class Node extends Component<NodeStyle> {
       (gradDef as RadialGradient).r0! * width,
       this.position.x + gradDef.x1! * width,
       this.position.y + gradDef.y1! * height,
-      (gradDef as RadialGradient).r1! * width
+      (gradDef as RadialGradient).r1! * width,
     );
 
     gradDef.colorStops.forEach((stop) => {
@@ -99,11 +109,32 @@ export class Node extends Component<NodeStyle> {
     const styleState = this.styleManager.getNodeStyle(this);
     if (!styleState) return;
 
+    // Get base styles
     const base = this.styleManager.getTransitionableProps(styleState.currentState);
-    const override = animationManager?.activeAnimations.get(this) || {};
-    const style = { ...base, ...override };
-    let { fill, borderColor, borderWidth, borderRadius, labelColor, labelFont, width, height } =
-      style;
+
+    // Get animations (highest priority for their specific properties)
+    const animations = animationManager?.activeAnimations.get(this) || {};
+
+    // Get transitions (medium priority)
+    const transitions = animationManager?.activeTransitions.get(this) || {};
+
+    // Merge in correct priority order
+    const style = {
+      ...base, // Base styles (lowest priority)
+      ...transitions, // Transitions override base
+      ...animations, // Explicit animations have highest priority
+    };
+
+    let {
+      fill,
+      borderColor,
+      borderWidth,
+      borderRadius,
+      labelColor,
+      labelFont,
+      width,
+      height,
+    } = style;
 
     // draw the node rectangle
     ctx.beginPath();
@@ -112,7 +143,7 @@ export class Node extends Component<NodeStyle> {
       this.position.y,
       width,
       height,
-      borderRadius < 0 ? 0 : borderRadius
+      borderRadius < 0 ? 0 : borderRadius,
     );
 
     const isGradient = this.styleManager.isGradientDefinition(fill);
@@ -144,7 +175,7 @@ export class Node extends Component<NodeStyle> {
       ctx.fillText(
         this.label,
         this.position.x + this.labelPosition.x,
-        this.position.y + this.labelPosition.y
+        this.position.y + this.labelPosition.y,
       );
     }
   }
@@ -154,7 +185,7 @@ export class Node extends Component<NodeStyle> {
    */
   public drawTransition(
     ctx: CanvasRenderingContext2D,
-    transitionStyle: ComputedStyle<Partial<NodeStyle>>
+    transitionStyle: ComputedStyle<Partial<NodeStyle>>,
   ) {
     const nodeState = this.styleManager.getNodeStyle(this);
     if (!nodeState) return;
@@ -169,7 +200,7 @@ export class Node extends Component<NodeStyle> {
       this.position.y,
       merged.width,
       merged.height,
-      merged.borderRadius < 0 ? 0 : merged.borderRadius
+      merged.borderRadius < 0 ? 0 : merged.borderRadius,
     );
 
     // Handle gradient or solid fill
@@ -196,7 +227,7 @@ export class Node extends Component<NodeStyle> {
       ctx.fillText(
         this.label,
         this.position.x + this.labelPosition.x,
-        this.position.y + this.labelPosition.y
+        this.position.y + this.labelPosition.y,
       );
     }
   }
@@ -230,17 +261,16 @@ export class Node extends Component<NodeStyle> {
    * Handles hover state changes and applies hover styles
    */
   public handleHover(isHovered: boolean): void {
-    this.setIsHovered(isHovered);
+    this.styleManager.setHovered(this, isHovered);
+  }
+
+  public updatePortPositions(): void {
     const style = this.styleManager.getNodeStyle(this);
     if (!style) return;
-
-    const computedCurrentStyle = this.styleManager.getTransitionableProps(style.currentState);
-    const computedPreviousStyle = this.styleManager.getTransitionableProps(style.previousState);
-
-    if (isHovered && computedCurrentStyle.hover) {
-      this.setStyle(computedCurrentStyle.hover);
-    } else {
-      this.setStyle(computedPreviousStyle);
+    const { width, height } = this.styleManager.getTransitionableProps(style.currentState);
+    for (const port of this.ports) {
+      port.position.x = port.type === 'input' ? 0 : width;
+      port.position.y = Math.min(height, Math.max(0, port.position.y));
     }
   }
 

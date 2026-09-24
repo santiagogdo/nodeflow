@@ -17,7 +17,7 @@ export const numberInterpolator: Interpolator<number> = (start, end, t) =>
  */
 export const arrayInterpolator: Interpolator<Array<number>> = (start, end, t) => {
   const length = Math.min(start.length, end.length);
-  return start.map((_, i) => numberInterpolator(start[i], end[i], t));
+  return start.slice(0, length).map((_, i) => numberInterpolator(start[i], end[i], t));
 };
 
 export const colorInterpolator: Interpolator<string> = (start, end, t) => {
@@ -51,7 +51,7 @@ function clamp(value: number, min: number, max: number) {
 export function gradientInterpolator(
   start: GradientDefinition,
   end: GradientDefinition,
-  t: number
+  t: number,
 ): GradientDefinition {
   if (start.type !== end.type) {
     console.warn('Mismatched gradient types. Falling back to end gradient type.');
@@ -78,7 +78,7 @@ export function gradientInterpolator(
     (result as RadialGradient).r0 = clamp(
       numberInterpolator((start as RadialGradient).r0 ?? 0, end.r0 ?? 0, t),
       0,
-      1
+      1,
     );
 
     result.x1 = numberInterpolator(start.x1 ?? 0, end.x1 ?? 0, t);
@@ -86,7 +86,7 @@ export function gradientInterpolator(
     (result as RadialGradient).r1 = clamp(
       numberInterpolator((start as RadialGradient).r1 ?? 0, end.r1 ?? 0, t),
       0,
-      1
+      1,
     );
   }
 

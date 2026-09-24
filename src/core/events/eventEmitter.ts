@@ -3,6 +3,10 @@ export type CustomEventCallback<T> = (data?: T) => void;
 export class EventEmitter {
   private listeners: { [eventName: string]: Array<CustomEventCallback<any>> } = {};
 
+  public clear(): void {
+    this.listeners = {};
+  }
+
   /**
    * Subscribe to a custom event.
    */
@@ -28,7 +32,7 @@ export class EventEmitter {
    */
   public emit<T>(eventName: string, data?: T): void {
     if (!this.listeners[eventName]) return;
-    for (const callback of this.listeners[eventName]) {
+    for (const callback of [...this.listeners[eventName]]) {
       callback(data);
     }
   }

@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: lts/jod
       - run: npm ci
-      - run: npm test
+      - run: npm run check
 
   publish-npm:
     needs: test
