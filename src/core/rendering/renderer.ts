@@ -1,9 +1,10 @@
-import { Editor } from '../core/editor/editor';
-import { Node } from '../core/components/node';
-import { Connection } from '../core/components/connection';
-import { Port } from '../core/components/port';
-import { Position } from '../utils/interfaces';
-import FPSCounter from '../utils/fpsCounter';
+import { Editor } from '../editor/editor';
+import { Node } from '../components/node';
+import { Connection } from '../components/connection';
+import { Port } from '../components/port';
+import { Position } from '../../utils/interfaces';
+import FPSCounter from '../../utils/fpsCounter';
+import { StyleManager } from '../styles/styles';
 
 /** Basic transform interface for scale/offset */
 export interface RenderTransform {
@@ -19,45 +20,59 @@ export interface RenderRequest {
   transform: RenderTransform;
   pendingConnection: {
     port: Port | null;
-    mousePosition: Position | null;
+    position: Position | null;
   };
 }
 
 export class Renderer {
   public fpsCounter = new FPSCounter();
   public showFPSCounter: boolean;
-  constructor(private editor: Editor, private ctx: CanvasRenderingContext2D) {
+
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+
+  private styleManager: StyleManager;
+
+  constructor(private editor: Editor) {
+    this.styleManager = this.editor.getStyleManager();
+
+    this.canvas = this.editor.getCanvas();
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Cannot get 2D canvas context');
+    }
+    this.ctx = ctx;
     this.showFPSCounter = editor.editorConfig?.showFPSCounter || false;
   }
 
   public renderScene(request: RenderRequest) {
     const { nodes, connections, transform, pendingConnection } = request;
 
-    const devicePixelRatio = this.editor.getDevicePixelRatio();
+    const devicePixelRatio = this.editor.getViewportManager().getDevicePixelRatio();
 
-    // clear entire canvas
+    // Clear entire canvas
     this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
 
-    // apply devicePixelRatio scaling, then scene transform
+    // Apply devicePixelRatio scaling, then scene transform
     this.ctx.save();
     this.ctx.scale(devicePixelRatio, devicePixelRatio);
     this.ctx.translate(transform.offsetX, transform.offsetY);
     this.ctx.scale(transform.scale, transform.scale);
 
-    // 1) Draw all connections (behind)
+    // Draw all connections (behind)
     connections.forEach((conn) => {
       conn.draw(this.ctx, this.editor.getAnimationManager());
     });
 
-    // 2) If there's a pending connection (dragging from port to mouse), draw it
-    if (pendingConnection.port && pendingConnection.mousePosition) {
-      this.drawPendingConnection(pendingConnection.port, pendingConnection.mousePosition);
+    // If there's a pending connection (dragging from port to mouse), draw it
+    if (pendingConnection.port && pendingConnection.position) {
+      this.drawPendingConnection(pendingConnection.port, pendingConnection.position);
     }
 
-    // 3) Draw all nodes (on top)
+    // Draw all nodes (on top)
     nodes.forEach((node) => {
       node.draw(this.ctx, this.editor.getAnimationManager());
-      node.ports.forEach((port) => port.draw(this.ctx), this.editor.getAnimationManager());
+      node.ports.forEach((port) => port.draw(this.ctx, this.editor.getAnimationManager()));
     });
 
     this.ctx.restore();
@@ -72,7 +87,6 @@ export class Renderer {
     }
   }
 
-  // Example method to draw a "pending connection" line from a port to mouse
   private drawPendingConnection(port: Port, mousePos: Position) {
     if (!port.node) return;
 
@@ -81,12 +95,10 @@ export class Renderer {
     const targetX = mousePos.x;
     const targetY = mousePos.y;
 
-    // if you have default style:
-    const defConnStyle = this.editor.styleManager.getDefaultStyles().connection;
-    const { color, width, dashArray } =
-      this.editor.styleManager.getTransitionableProps(defConnStyle);
+    const defConnStyle = this.styleManager.getDefaultStyles().connection;
+    const { color, width, dashArray } = this.styleManager.getTransitionableProps(defConnStyle);
 
-    const isGradient = this.editor.styleManager.isGradientDefinition(color);
+    const isGradient = this.styleManager.isGradientDefinition(color);
 
     if (isGradient) {
       const gradDef = color;
@@ -94,7 +106,7 @@ export class Renderer {
         gradDef.x0 || 0,
         gradDef.y0 || 0,
         gradDef.x1 || 1,
-        gradDef.y1 || 1
+        gradDef.y1 || 1,
       );
 
       gradDef.colorStops.forEach((stop) => {
@@ -118,7 +130,7 @@ export class Renderer {
       targetX,
       targetY - cpOffset,
       targetX,
-      targetY
+      targetY,
     );
     this.ctx.stroke();
     this.ctx.setLineDash([]);

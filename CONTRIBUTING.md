@@ -24,8 +24,7 @@ Please note that this project is released with a [Code of conduct](CODE_OF_CONDU
 If you find a bug in Nodeflow, please follow these steps:
 
 1. **Search existing issues:**
-
-   - Check the [issues](https://github.com/yourusername/nodeflow/issues) to see if the bug has already been reported.
+   - Check the [issues](https://github.com/santiagogdo/nodeflow/issues) to see if the bug has already been reported.
 
 2. **Open a new issue:**
    - If the bug is new, open an issue and include:
@@ -40,7 +39,6 @@ If you find a bug in Nodeflow, please follow these steps:
 If you have an idea for a new feature or enhancement:
 
 1. **Search existing issues:**
-
    - Ensure your suggestion hasn't already been proposed.
 
 2. **Open a new issue:**
@@ -57,13 +55,12 @@ For new features or major changes, please start a new discussion on the [discuss
 For bug fixes, quality of life improvements, and documentation updates:
 
 1. **Fork the repository:**
-
    - Click the "Fork" button at the top right of the repository page.
 
 2. **Clone your fork:**
 
    ```bash
-   git clone https://github.com/yourusername/nodeflow.git
+   git clone https://github.com/santiagogdo/nodeflow.git
    ```
 
 3. **Create a branch:**
@@ -73,25 +70,20 @@ For bug fixes, quality of life improvements, and documentation updates:
    ```
 
 4. **Make your changes:**
-
    - Write clear and concise commit messages.
 
 5. **Test your changes:**
-
    - Make sure to add/update tests for your changes.
    - Ensure all tests pass.
 
 6. **Commit and push:**
-
    - Commit your changes.
    - Push your changes to your fork.
 
 7. **Open a pull request:**
-
    - Navigate to the original repository and click "New Pull Request."
    - Link related issues if any.
    - Use a descriptive title and provide a clear description of your changes. For example:
-
      - Use a prefix to indicate the type of change: `[FIX/FEATURE/IMPROVEMENT/DOC]`
 
      ```
@@ -105,7 +97,7 @@ For bug fixes, quality of life improvements, and documentation updates:
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/yourusername/nodeflow.git
+   git clone https://github.com/santiagogdo/nodeflow.git
    ```
 
 2. **Navigate to the project directory:**
@@ -117,24 +109,24 @@ For bug fixes, quality of life improvements, and documentation updates:
 3. **Install dependencies:**
 
    ```bash
-   npm install
+   npm ci
    ```
 
 4. **Run the development server:**
 
-   Copy the content of one of the examples to the root of the project. You should have an `index.html`, `index.ts`, and `index.css` file. These files are git ignored on purpose, because they are for local development only.
-
-   Run the development server:
+   Run a maintained example directly:
 
    ```bash
-   npm run dev
+   npm run example basic
    ```
 
 5. **Run tests:**
 
    ```bash
-   npm test
+   npm run check
    ```
+
+   `npm run check` typechecks source, examples, and tests, runs the suite once, builds the package, and verifies ESM/CommonJS and TypeScript consumers. CI runs these checks on pull requests and pushes to the main branches. Use `npm run test:watch` during development.
 
    You can check coverage with:
 
@@ -147,14 +139,12 @@ For bug fixes, quality of life improvements, and documentation updates:
 ## Additional notes
 
 - **Documentation:**
-
   - Comprehensive documentation is available [here](./docs). Contributions to docs are welcome!
 
 - **NPM package:**
-
   - Ensure that changes are compatible with the npm package. Follow [npm guidelines](https://docs.npmjs.com/) for publishing updates.
 
 - **Feedback:**
-  - Feel free to reach out via [issues](https://github.com/yourusername/nodeflow/issues) for any questions or feedback.
+  - Feel free to reach out via [issues](https://github.com/santiagogdo/nodeflow/issues) for any questions or feedback.
 
 Thank you for contributing to Nodeflow! 🙏

@@ -1,0 +1,93 @@
+# Git commands needed by git-workflow skills.
+prefix_rule(
+  pattern = ["git", "status", "-b"],
+  decision = "allow",
+  justification = "Needed to inspect repo status for git-workflow tasks.",
+  match = [
+    "git status -b",
+    "git status -b --porcelain",
+  ],
+  not_match = [
+    "git status",
+  ],
+)
+prefix_rule(
+  pattern = ["git", "diff", "--staged"],
+  decision = "allow",
+  justification = "Needed to review staged changes before committing.",
+  match = [
+    "git diff --staged",
+  ],
+  not_match = [
+    "git diff",
+  ],
+)
+prefix_rule(
+  pattern = ["git", "log", "-1"],
+  decision = "allow",
+  justification = "Needed to read the latest commit summary for git-workflow.",
+  match = [
+    "git log -1 --pretty=%s",
+  ],
+)
+prefix_rule(
+  pattern = ["git", "branch", "--show-current"],
+  decision = "allow",
+  justification = "Needed to detect the current branch in git-workflow.",
+  match = [
+    "git branch --show-current",
+  ],
+  not_match = [
+    "git branch",
+  ],
+)
+prefix_rule(
+  pattern = ["git", "checkout", "-b"],
+  decision = "allow",
+  justification = "Needed to create a new branch in git-workflow.",
+  match = [
+    "git checkout -b feature/test",
+  ],
+  not_match = [
+    "git checkout",
+  ],
+)
+prefix_rule(
+  pattern = ["git", "commit"],
+  decision = "allow",
+  justification = "Needed to create commits during git-workflow.",
+  match = [
+    "git commit -m \"chore: update\"",
+    "git commit --amend",
+  ],
+  not_match = [
+    "git commit-tree",
+  ],
+)
+prefix_rule(
+  pattern = ["git", "push"],
+  decision = "allow",
+  justification = "Needed to push branches during git-workflow.",
+  match = [
+    "git push",
+  ],
+  not_match = [
+    "git pull",
+  ],
+)
+
+# GitHub CLI commands used by PR workflows.
+prefix_rule(
+  pattern = ["gh", "pr", "create"],
+  decision = "allow",
+  justification = "Needed to open PRs from git-workflow.",
+  match = [
+    "gh pr create",
+    "gh pr create --base develop",
+    "gh pr create --draft",
+    "gh pr create --draft --base develop",
+  ],
+  not_match = [
+    "gh pr view",
+  ],
+)

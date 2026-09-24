@@ -17,20 +17,20 @@ export interface BoundingBox {
 }
 
 export abstract class Entity {
-  public id: string;
+  public readonly id: string;
   public isDirty = false;
   public styleManager: StyleManager;
-  constructor(styleManager: StyleManager) {
-    this.id = generateBase64UrlSafeId();
+  constructor(styleManager: StyleManager, id?: string) {
+    this.id = id ?? generateBase64UrlSafeId();
     this.styleManager = styleManager;
   }
 
   /**
-   * Mark this component as dirty.
-   * The Editor or RenderPipeline will detect this and re-draw its bounding box.
+   * Invalidate the editor so this change is drawn on its next scheduled frame.
    */
   public markDirty() {
     this.isDirty = true;
+    this.styleManager.invalidate();
   }
 
   /**
@@ -42,25 +42,52 @@ export abstract class Entity {
 }
 
 export interface ComponentParams {
+  id?: string;
   position?: Position;
 }
 
 export interface BaseComponentParams {
+  id?: string;
   position: Position;
 }
 export interface StylableComponentParams<T> extends BaseComponentParams {
-  style?: Partial<T>;
+  style?: StyleStateParams<T>;
   styleManager: StyleManager;
 }
 
 export abstract class Component<T> extends Entity {
-  public position: Position;
+  private _position!: Position;
+
+  public get position(): Position {
+    return this._position;
+  }
+  public set position(value: Position) {
+    if (!Number.isFinite(value.x) || !Number.isFinite(value.y)) {
+      throw new Error('Position coordinates must be finite numbers');
+    }
+    this._position = new Proxy(
+      { ...value },
+      {
+        set: (target, key, next: number) => {
+          if (!Number.isFinite(next))
+            throw new Error('Position coordinates must be finite numbers');
+          const coordinate = key as keyof Position;
+          if (target[coordinate] !== next) {
+            target[coordinate] = next;
+            this.markDirty();
+          }
+          return true;
+        },
+      },
+    );
+    this.markDirty();
+  }
   public isHovered = false;
   public isActive = false;
   public abstract componentType: ComponentType;
 
   constructor(params: StylableComponentParams<T>) {
-    super(params.styleManager);
+    super(params.styleManager, params.id);
     this.position = params.position;
   }
 
@@ -75,17 +102,20 @@ export abstract class Component<T> extends Entity {
   }
 
   public isComponentType<T extends Component<any>>(
-    componentType: new (...args: any[]) => T
+    componentType: new (...args: any[]) => T,
   ): this is T {
     return this instanceof componentType;
   }
 
   public abstract setStyle(style: StyleStateParams<T>): void;
 
-  public abstract draw(ctx: CanvasRenderingContext2D, animationManager?: AnimationManager): void;
+  public abstract draw(
+    ctx: CanvasRenderingContext2D,
+    animationManager?: AnimationManager,
+  ): void;
 
   public abstract drawTransition(
     ctx: CanvasRenderingContext2D,
-    transitionStyle: ComputedStyle<Partial<T>>
+    transitionStyle: ComputedStyle<Partial<T>>,
   ): void;
 }

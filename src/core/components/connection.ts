@@ -6,16 +6,26 @@ import { AnimationManager } from '../animation/animationManager';
 
 export class Connection extends Entity {
   public componentType = ComponentType.Connection;
+  public sourcePort: Port;
+  public targetPort: Port;
   public isHovered = false;
   public isActive = false;
-  constructor(public sourcePort: Port, public targetPort: Port, styleManager: StyleManager) {
-    super(styleManager);
-    this.styleManager.setConnectionStyle(this, {});
+
+  constructor(
+    sourcePort: Port,
+    targetPort: Port,
+    styleManager: StyleManager,
+    options: { id?: string; style?: StyleStateParams<ConnectionStyle> } = {},
+    private onDisconnect?: (connection: Connection) => void,
+  ) {
+    super(styleManager, options.id);
+    this.sourcePort = sourcePort;
+    this.targetPort = targetPort;
+    this.styleManager.setConnectionStyle(this, options.style);
   }
 
   public disconnect() {
-    this.sourcePort = null as any;
-    this.targetPort = null as any;
+    this.onDisconnect?.(this);
   }
 
   public setIsHovered(isHovered: boolean) {
@@ -34,18 +44,7 @@ export class Connection extends Entity {
    * Handles hover state changes and applies hover styles
    */
   public handleHover(isHovered: boolean): void {
-    this.setIsHovered(isHovered);
-    const style = this.styleManager.getConnectionStyle(this);
-    if (!style) return;
-
-    const computedCurrentStyle = this.styleManager.getTransitionableProps(style.currentState);
-    const computedPreviousStyle = this.styleManager.getTransitionableProps(style.previousState);
-
-    if (isHovered && computedCurrentStyle.hover) {
-      this.setStyle(computedCurrentStyle.hover);
-    } else {
-      this.setStyle(computedPreviousStyle);
-    }
+    this.styleManager.setHovered(this, isHovered);
   }
 
   public draw(ctx: CanvasRenderingContext2D, animationManager?: AnimationManager) {
@@ -54,7 +53,7 @@ export class Connection extends Entity {
 
     const base = this.styleManager.getTransitionableProps(styleState.currentState);
     const override = animationManager?.activeAnimations.get(this) || {};
-    const style = { ...base, ...override };
+    const style = { ...base, ...animationManager?.activeTransitions.get(this), ...override };
     const { color, width, dashArray, lineDashOffset, lineStyle = 'curved' } = style;
 
     const points = this.getConnectionPoints();
@@ -93,7 +92,7 @@ export class Connection extends Entity {
   private createGradient(
     ctx: CanvasRenderingContext2D,
     gradDef: any,
-    points: { source: { x: number; y: number }; target: { x: number; y: number } }
+    points: { source: { x: number; y: number }; target: { x: number; y: number } },
   ) {
     const { source, target } = points;
 
@@ -110,7 +109,7 @@ export class Connection extends Entity {
         gradDef.r0 ?? 0,
         target.x,
         target.y,
-        gradDef.r1 ?? 1
+        gradDef.r1 ?? 1,
       );
       gradDef.colorStops.forEach((stop: any) => grad.addColorStop(stop.offset, stop.color));
       return grad;
@@ -122,7 +121,7 @@ export class Connection extends Entity {
   private drawPath(
     ctx: CanvasRenderingContext2D,
     points: { source: { x: number; y: number }; target: { x: number; y: number } },
-    lineStyle: 'straight' | 'curved'
+    lineStyle: 'straight' | 'curved',
   ) {
     const { source, target } = points;
     ctx.moveTo(source.x, source.y);
@@ -137,7 +136,7 @@ export class Connection extends Entity {
         target.x,
         target.y - cpOffset,
         target.x,
-        target.y
+        target.y,
       );
     }
   }

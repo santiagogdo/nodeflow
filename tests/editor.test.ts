@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Editor } from '../src/index';
 
 describe('Editor', () => {
@@ -13,6 +13,8 @@ describe('Editor', () => {
 
     editor = new Editor(container);
   });
+
+  afterEach(() => editor.destroy());
 
   it('should create an editor instance', () => {
     expect(editor).toBeInstanceOf(Editor);
@@ -193,7 +195,9 @@ describe('Editor', () => {
     node.handleHover(true);
     const hoverStyle = editor.styleManager.getNodeStyle(node);
     expect(hoverStyle).toBeDefined();
-    const computedHoverStyle = editor.styleManager.getTransitionableProps(hoverStyle!.currentState);
+    const computedHoverStyle = editor.styleManager.getTransitionableProps(
+      hoverStyle!.currentState,
+    );
     expect(computedHoverStyle.borderColor).toBe('#FF0000');
 
     // Simulate hover end
@@ -201,7 +205,7 @@ describe('Editor', () => {
     const normalStyle = editor.styleManager.getNodeStyle(node);
     expect(normalStyle).toBeDefined();
     const computedNormalStyle = editor.styleManager.getTransitionableProps(
-      normalStyle!.currentState
+      normalStyle!.currentState,
     );
     expect(computedNormalStyle.borderColor).toBe('#000000');
   });
@@ -268,7 +272,9 @@ describe('Editor', () => {
     // Test hover state
     port.handleHover(true);
     const hoverStyle = editor.styleManager.getPortStyle(port);
-    const computedHoverStyle = editor.styleManager.getTransitionableProps(hoverStyle!.currentState);
+    const computedHoverStyle = editor.styleManager.getTransitionableProps(
+      hoverStyle!.currentState,
+    );
     expect(computedHoverStyle.fill).toBe('#00FF00');
   });
 
@@ -296,7 +302,9 @@ describe('Editor', () => {
     const connection = editor.getConnections()[0];
     const connectionStyle = editor.styleManager.getConnectionStyle(connection);
     expect(connectionStyle).toBeDefined();
-    const computedStyle = editor.styleManager.getTransitionableProps(connectionStyle!.currentState);
+    const computedStyle = editor.styleManager.getTransitionableProps(
+      connectionStyle!.currentState,
+    );
 
     expect(computedStyle.color).toBe('#FF0000');
     expect(computedStyle.width).toBe(4);
@@ -471,13 +479,15 @@ describe('Editor', () => {
 
     connection.handleHover(true);
     const hoverStyle = editor.styleManager.getConnectionStyle(connection);
-    const computedHoverStyle = editor.styleManager.getTransitionableProps(hoverStyle!.currentState);
+    const computedHoverStyle = editor.styleManager.getTransitionableProps(
+      hoverStyle!.currentState,
+    );
     expect(computedHoverStyle.color).toBe('#FF0000');
 
     connection.handleHover(false);
     const normalStyle = editor.styleManager.getConnectionStyle(connection);
     const computedNormalStyle = editor.styleManager.getTransitionableProps(
-      normalStyle!.currentState
+      normalStyle!.currentState,
     );
     expect(computedNormalStyle.color).toBe('#000000');
   });
@@ -499,7 +509,7 @@ describe('Editor', () => {
     });
 
     // Wait for animation frame
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    vi.advanceTimersByTime(80);
 
     const style = editor.styleManager.getNodeStyle(node);
     const computedStyle = editor.styleManager.getTransitionableProps(style!.currentState);

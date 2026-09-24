@@ -4,6 +4,7 @@ import { Node } from './node';
 import { PortStyle, ComputedStyle } from '../styles/styles';
 import { Component } from './component';
 import { AnimationManager } from '../animation/animationManager';
+import { Connection } from './connection';
 
 type PortType = 'input' | 'output';
 
@@ -22,13 +23,14 @@ export interface StylablePortParams extends StylableComponentParams<PortStyle> {
 export class Port extends Component<PortStyle> {
   public componentType = ComponentType.Port;
   public node?: Node;
+  public connections: Array<Connection> = [];
   public type: PortType = 'input';
 
   constructor(params: StylablePortParams) {
     super(params);
     this.node = params.node;
     if (params.type) this.type = params.type;
-    this.styleManager.setPortStyle(this, {});
+    this.styleManager.setPortStyle(this, params.style);
   }
 
   public draw(ctx: CanvasRenderingContext2D, animationManager?: AnimationManager) {
@@ -37,7 +39,7 @@ export class Port extends Component<PortStyle> {
 
     const base = this.styleManager.getTransitionableProps(styleState.currentState);
     const override = animationManager?.activeAnimations.get(this) || {};
-    const style = { ...base, ...override };
+    const style = { ...base, ...animationManager?.activeTransitions.get(this), ...override };
     const { fill, borderColor, borderWidth, radius } = style;
 
     if (!this.node) return;
@@ -55,11 +57,10 @@ export class Port extends Component<PortStyle> {
         gradDef.x0 || 0,
         gradDef.y0 || 0,
         gradDef.x1 || 100,
-        gradDef.y1 || 100
+        gradDef.y1 || 100,
       );
 
       gradDef.colorStops.forEach((stop) => {
-        // console.log('Offset: ', stop.offset, stop.color);
         grad.addColorStop(stop.offset, stop.color);
       });
 
@@ -76,7 +77,7 @@ export class Port extends Component<PortStyle> {
 
   public drawTransition(
     ctx: CanvasRenderingContext2D,
-    transitionStyle: ComputedStyle<Partial<PortStyle>>
+    transitionStyle: ComputedStyle<Partial<PortStyle>>,
   ) {
     const baseState = this.styleManager.getPortStyle(this);
     if (!baseState) return;
@@ -100,11 +101,10 @@ export class Port extends Component<PortStyle> {
         gradDef.x0 || 0,
         gradDef.y0 || 0,
         gradDef.x1 || 100,
-        gradDef.y1 || 100
+        gradDef.y1 || 100,
       );
 
       gradDef.colorStops.forEach((stop) => {
-        // console.log('Offset: ', stop.offset, stop.color);
         grad.addColorStop(stop.offset, stop.color);
       });
 
@@ -120,25 +120,7 @@ export class Port extends Component<PortStyle> {
   }
 
   public handleHover(isHovered: boolean): void {
-    this.setIsHovered(isHovered);
-    const style = this.styleManager.getPortStyle(this);
-    if (style) {
-      const computedCurrentPortStyle = this.styleManager.getTransitionableProps(style.currentState);
-      const computedPreviousPortStyle = this.styleManager.getTransitionableProps(
-        style.previousState
-      );
-      if (isHovered) {
-        if (computedCurrentPortStyle.hover) {
-          this.setStyle({
-            ...computedCurrentPortStyle.hover,
-          });
-        }
-      } else {
-        this.setStyle({
-          ...computedPreviousPortStyle,
-        });
-      }
-    }
+    this.styleManager.setHovered(this, isHovered);
   }
 
   public setStyle(style: Partial<PortStyle>) {
@@ -149,7 +131,7 @@ export class Port extends Component<PortStyle> {
     const portState = this.styleManager.getPortStyle(this);
     if (!portState) {
       const { radius } = this.styleManager.getTransitionableProps(
-        this.styleManager.getDefaultStyles().port
+        this.styleManager.getDefaultStyles().port,
       );
       return {
         x: this.position.x,

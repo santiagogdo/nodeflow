@@ -7,25 +7,36 @@
   "version": "1.0.0",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "docs"
   ],
   "main": "./dist/nodeflow.umd.cjs",
   "module": "./dist/nodeflow.js",
   "exports": {
     ".": {
-      "import": "./dist/nodeflow.js",
-      "require": "./dist/nodeflow.umd.cjs"
-    }
+      "import": {
+        "types": "./dist/nodeflow.d.ts",
+        "default": "./dist/nodeflow.js"
+      },
+      "require": {
+        "types": "./dist/nodeflow.d.cts",
+        "default": "./dist/nodeflow.umd.cjs"
+      }
+    },
+    "./style.css": "./dist/nodeflow.css"
   },
   "types": "dist/nodeflow.d.ts",
   "scripts": {
     "example": "node ./examples/run-example.js",
     "dev": "vite",
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "tsc -p tsconfig.json && vite build && node scripts/build-declarations.mjs",
     "preview": "vite preview --host",
-    "test": "vitest",
+    "test": "vitest run",
     "test:watch": "vitest watch",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "check": "npm run typecheck && npm test && npm run build && npm run test:package",
+    "test:package": "node scripts/check-package.mjs"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.0.5",
@@ -35,5 +46,8 @@
     "vite-plugin-dts": "^4.5.0",
     "vitest": "^3.0.5",
     "vitest-canvas-mock": "^0.3.3"
-  }
+  },
+  "sideEffects": [
+    "**/*.css"
+  ]
 }

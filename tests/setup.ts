@@ -1,9 +1,10 @@
 import 'vitest-canvas-mock';
-import { afterEach, beforeEach, afterAll, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 
 // Clean up DOM after each test
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers();
 
   // Add roundRect polyfill
   CanvasRenderingContext2D.prototype.roundRect = function (
@@ -11,7 +12,7 @@ beforeEach(() => {
     y: number,
     width: number,
     height: number,
-    radius: number
+    radius: number,
   ) {
     this.beginPath();
     this.moveTo(x + radius, y);
@@ -25,5 +26,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   document.body.innerHTML = '';
 });

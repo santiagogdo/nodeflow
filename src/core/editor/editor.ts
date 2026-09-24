@@ -1,533 +1,389 @@
-import { Node } from '../components/node';
 import { Connection } from '../components/connection';
 import { Port } from '../components/port';
-import { Position, Size } from '../../utils/interfaces';
-import { Animatable, ComputedStyleChange, StyleManager, StyleStateParams } from '../styles/styles';
+import { Node } from '../components/node';
+import { Component } from '../components/component';
+import { StyleManager, NewDefaultEditorStyles } from '../styles/styles';
 import { AnimationManager } from '../animation/animationManager';
-import { Renderer } from '../../rendering/renderer';
-import { Component, ComponentType, Entity } from '../components/component';
-import { Easing, getEasingFunction } from '../animation/easingFunctions';
-import { InterpolatableValue } from '../animation/animation';
-import { createContextMenu } from '../contextMenu/contextMenu';
-import { EditorDomEvents } from '../events/editorDomEvents';
+import { StyleAnimator } from '../animation/styleAnimator';
+import { Renderer, RenderTransform } from '../rendering/renderer';
+import { BackgroundRenderer } from '../rendering/backgroundRenderer';
+import { ContextMenu, ContextMenuContext } from '../contextMenu/contextMenu';
+import { DomEventsManager } from '../events/domEventsManager';
+import { EventBus } from '../events/eventBus';
 import { EventEmitter } from '../events/eventEmitter';
-import { BackgroundRenderer } from '../../rendering/backgroundRenderer';
+import { EventPayloads, EventType } from '../events/eventType';
 import { AddNodeParams, EditorConfig } from './types';
+import ComponentManager from '../components/componentManager';
+import ViewportManager from './viewportManager';
+import { cloneJSON, EditorState, parseEditorState } from './serialization';
 
-/**
- * The main Editor class:
- * - Manages nodes and connections
- * - Handles mouse events for panning, node dragging, connecting ports
- * - Has a single animation loop that calls `AnimationManager.update()`
- *   and re-renders the entire scene each frame.
- */
+/** Public editor interface. Managers remain available for advanced integrations. */
 export class Editor {
-  // Scene Data
-  private nodes: Node[] = [];
-  private connections: Connection[] = [];
-
-  // Pan/zoom
-  private scale = 1.0;
-  private offsetX = 0;
-  private offsetY = 0;
-
-  // For connecting ports
-  private pendingConnectionPort: Port | null = null;
-  private mousePosition: Position | null = null;
-
-  private hoveredComponent: Component<any> | null = null;
-
-  // The canvas + 2D context
   private canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
   private backgroundCanvas: HTMLCanvasElement;
-  private backgroundCtx: CanvasRenderingContext2D;
-
-  // Style & animation
-  public styleManager = new StyleManager();
-  private animationManager = new AnimationManager();
-
-  // The renderer that draws full scene
+  private menu: ContextMenu;
+  private animationManager: AnimationManager;
+  private componentManager: ComponentManager;
+  private viewportManager: ViewportManager;
   private renderer: Renderer;
   private backgroundRenderer: BackgroundRenderer;
-  public editorConfig?: EditorConfig;
+  private frameId: number | null = null;
+  private dirty = true;
+  private destroyed = false;
+  private originalPosition: string;
+  private changedPosition: boolean;
 
-  public domEvents: EditorDomEvents;
-  public customEvents = new EventEmitter();
+  public readonly styleManager: StyleManager;
+  public readonly domEvents: DomEventsManager;
+  public readonly eventBus: EventBus;
+  /** Application-defined events, retained for compatibility. */
+  public readonly customEvents = new EventEmitter();
+  public readonly editorConfig: EditorConfig;
 
-  constructor(container: HTMLElement, config?: EditorConfig) {
-    if (config) {
-      this.editorConfig = config;
-    }
+  constructor(
+    private container: HTMLElement,
+    config: EditorConfig = {},
+  ) {
+    // Invalid initial data must not attach DOM or register browser listeners.
+    const initialState =
+      config.initialState === undefined ? undefined : parseEditorState(config.initialState);
+    this.editorConfig = { ...config };
+    this.originalPosition = container.style.position;
+    this.changedPosition = !container.style.position || container.style.position === 'static';
+    if (this.changedPosition) container.style.position = 'relative';
 
     this.canvas = document.createElement('canvas');
-    this.backgroundCanvas = document.createElement('canvas');
-
-    this.backgroundCanvas.style.width = '100%';
-    this.backgroundCanvas.style.height = '100%';
-    this.backgroundCanvas.style.background = config?.background || 'transparent';
-    this.backgroundCanvas.style.position = 'absolute';
-    this.backgroundCanvas.style.top = '0';
-    this.backgroundCanvas.style.left = '0';
-    this.backgroundCanvas.style.zIndex = '-1';
-
-    this.canvas.style.width = '100%';
-    this.canvas.style.height = '100%';
-    this.canvas.style.background = 'transparent';
-
-    container.appendChild(this.backgroundCanvas);
-    container.appendChild(this.canvas);
-
-    const contextMenu = createContextMenu();
-
-    if (container.style.position !== 'relative') {
-      container.style.position = 'relative';
-    }
-
-    container.appendChild(contextMenu);
-
-    const ctx = this.canvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('Cannot get 2D canvas context');
-    }
-
-    const backgroundCtx = this.backgroundCanvas.getContext('2d');
-    if (!backgroundCtx) {
-      throw new Error('Cannot get 2D canvas context');
-    }
-
-    this.ctx = ctx;
-    this.backgroundCtx = backgroundCtx;
-
-    this.renderer = new Renderer(this, ctx);
-    this.backgroundRenderer = new BackgroundRenderer(this, backgroundCtx);
-
-    this.domEvents = new EditorDomEvents(this, container, this.canvas, this.backgroundCanvas);
-
-    this.styleManager.onTransitionableStyleChanged(
-      ComponentType.Node,
-      this.onTransitionableStyleChanged.bind(this)
-    );
-    this.styleManager.onTransitionableStyleChanged(
-      ComponentType.Port,
-      this.onTransitionableStyleChanged.bind(this)
-    );
-    this.styleManager.onTransitionableStyleChanged(
-      ComponentType.Connection,
-      this.onTransitionableStyleChanged.bind(this)
-    );
-
-    this.styleManager.onAnimation(ComponentType.Node, this.onAnimation.bind(this));
-    this.styleManager.onAnimation(ComponentType.Port, this.onAnimation.bind(this));
-    this.styleManager.onAnimation(ComponentType.Connection, this.onAnimation.bind(this));
-
-    // Start the main animation + render loop
-    this.backgroundRenderer.render({
-      scale: this.scale,
-      offsetX: this.offsetX,
-      offsetY: this.offsetY,
+    Object.assign(this.canvas.style, {
+      width: '100%',
+      height: '100%',
+      display: 'block',
+      position: 'relative',
+      zIndex: '1',
+      background: 'transparent',
+      cursor: 'grab',
+      touchAction: 'none',
     });
-    requestAnimationFrame(this.frameLoop.bind(this));
+    this.canvas.tabIndex = 0;
+    this.canvas.setAttribute('aria-label', 'Node editor');
+    this.backgroundCanvas = document.createElement('canvas');
+    Object.assign(this.backgroundCanvas.style, {
+      width: '100%',
+      height: '100%',
+      position: 'absolute',
+      inset: '0',
+      zIndex: '0',
+      pointerEvents: 'none',
+      background: config.background ?? 'transparent',
+    });
+    this.backgroundCanvas.setAttribute('aria-hidden', 'true');
+    this.menu = new ContextMenu();
+    if (!this.canvas.getContext('2d') || !this.backgroundCanvas.getContext('2d')) {
+      if (this.changedPosition) container.style.position = this.originalPosition;
+      throw new Error('Cannot get 2D canvas context');
+    }
+    container.append(this.backgroundCanvas, this.canvas, this.menu.element);
+
+    this.eventBus = new EventBus();
+    this.eventBus.on(EventType.SCENE_CHANGED, () => this.invalidate());
+    this.styleManager = new StyleManager(this.eventBus);
+    this.animationManager = new AnimationManager(this.eventBus);
+    new StyleAnimator(this.styleManager, this.animationManager);
+    this.viewportManager = new ViewportManager(this.canvas, this.eventBus);
+    this.componentManager = new ComponentManager(
+      this.styleManager,
+      this.viewportManager,
+      this.eventBus,
+    );
+    this.renderer = new Renderer(this);
+    this.backgroundRenderer = new BackgroundRenderer(this, this.eventBus);
+    this.eventBus.on(EventType.VIEW_CHANGED, () => {
+      if (!this.editorConfig.grid?.locked) this.renderBackground();
+    });
+    this.eventBus.on(EventType.CONTEXT_MENU_OPEN, (payload) => {
+      if (payload) this.openContextMenu(payload);
+    });
+    this.eventBus.on(EventType.CONTEXT_MENU_REOPEN, (payload) => {
+      if (payload) this.openContextMenu(payload);
+    });
+    this.eventBus.on(EventType.CONTEXT_MENU_CLOSE, () => this.closeContextMenu());
+    this.domEvents = new DomEventsManager(
+      this,
+      container,
+      this.canvas,
+      this.backgroundCanvas,
+      this.eventBus,
+    );
+    if (initialState) this.deserialize(initialState);
+    this.renderBackground();
+    this.invalidate();
   }
 
-  /**
-   * The main loop (once per frame).
-   * Updates animations and re-render the entire scene.
-   */
-  private frameLoop(currentTime: number) {
-    // Let the animation manager run its animations
-    this.animationManager.update(currentTime);
-
-    // Re-draw the scene in a single pass
-    this.render();
-
-    this.renderer.fpsCounter.frame(currentTime);
-
-    // Schedule the next frame
-    requestAnimationFrame(this.frameLoop.bind(this));
+  private assertAlive(): void {
+    if (this.destroyed) throw new Error('Editor has been destroyed');
   }
 
-  private onAnimation<T>(
-    component: Component<T> | Entity,
-    style: ComputedStyleChange<StyleStateParams<T>>
-  ) {
-    if (style.currentState.animation) {
-      Object.entries(style.currentState.animation as Record<string, Animatable<T>>).forEach(
-        ([animatableProp, animatablePropSettings]) => {
-          console.log(animatableProp, animatablePropSettings);
+  private invalidate(): void {
+    if (this.destroyed) return;
+    this.dirty = true;
+    this.scheduleFrame();
+  }
 
-          this.animationManager.requestAnimation({
-            from: animatablePropSettings.from as InterpolatableValue,
-            to: animatablePropSettings.to as InterpolatableValue,
-            duration: animatablePropSettings.duration ?? 1000,
-            easing: getEasingFunction(animatablePropSettings.easing) ?? Easing.linear,
-            loop: animatablePropSettings.loop ?? false,
-            loopMode: animatablePropSettings.loopMode ?? 'none',
+  private scheduleFrame(): void {
+    if (this.frameId === null && !this.destroyed)
+      this.frameId = requestAnimationFrame(this.frameLoop);
+  }
 
-            onUpdate: (currentValue) => {
-              // Retrieve existing transitions (if any)
-              const existing =
-                this.animationManager.activeAnimations.get(component as Component<T>) || {};
+  private frameLoop = (time: number): void => {
+    this.frameId = null;
+    if (this.destroyed) return;
+    const animating = this.animationManager.hasActiveAnimations();
+    this.animationManager.update(time);
+    if (this.dirty || animating) this.render();
+    this.renderer.fpsCounter.frame(time);
+    if (this.dirty || this.animationManager.hasActiveAnimations()) this.scheduleFrame();
+  };
 
-              // Merge the single updated property
-              existing[animatableProp] = currentValue;
+  public render(): void {
+    if (this.destroyed) return;
+    this.dirty = false;
+    this.renderer.renderScene({
+      nodes: this.getNodes(),
+      connections: this.getConnections(),
+      transform: this.getViewport(),
+      pendingConnection: {
+        port: this.componentManager.getPendingConnectionPort(),
+        position: this.componentManager.getPendingConnectionPosition(),
+      },
+    });
+  }
 
-              // Save back
-              this.animationManager.activeAnimations.set(component as Component<T>, existing);
+  public renderBackground(): void {
+    if (this.destroyed) return;
+    this.backgroundRenderer.render(
+      this.editorConfig.grid?.locked
+        ? { scale: 1, offsetX: 0, offsetY: 0 }
+        : this.getViewport(),
+    );
+  }
 
-              this.render();
-            },
-            onComplete: (finalValue) => {
-              console.log('Animation completed');
-              const propName = animatableProp as keyof StyleStateParams<T>;
-              style.currentState[propName] = finalValue as any;
-            },
-          });
-        }
+  public addNode(params: AddNodeParams): Node {
+    this.assertAlive();
+    return this.componentManager.addNode(params);
+  }
+  public removeNode(id: string): void {
+    this.assertAlive();
+    this.componentManager.removeNode(id);
+  }
+  public connectPorts(source: Port, target: Port): Connection | undefined {
+    this.assertAlive();
+    return this.componentManager.connectPorts(source, target);
+  }
+  public disconnect(connection: Connection): void {
+    this.assertAlive();
+    this.componentManager.disconnect(connection);
+  }
+  public clear(): void {
+    this.assertAlive();
+    this.closeContextMenu();
+    this.componentManager.clear();
+    this.viewportManager.stopPanning();
+    this.animationManager.clear();
+    this.invalidate();
+  }
+  public getNodes(): Node[] {
+    return this.componentManager.getNodes();
+  }
+  public getConnections(): Connection[] {
+    return this.componentManager.getConnections();
+  }
+  public getNodeById(id: string): Node | undefined {
+    return this.componentManager.getNodeById(id);
+  }
+  public getConnectionById(id: string): Connection | undefined {
+    return this.componentManager.getConnectionById(id);
+  }
+  public setDefaultStyles(styles: Partial<NewDefaultEditorStyles>): void {
+    this.assertAlive();
+    this.styleManager.setDefaultStyles(styles);
+  }
+  public getViewport(): RenderTransform {
+    return this.viewportManager.getViewport();
+  }
+  public setViewport(viewport: Partial<RenderTransform>): void {
+    this.assertAlive();
+    this.viewportManager.setViewport(viewport);
+  }
+  public toWorld(x: number, y: number) {
+    return this.viewportManager.toWorld(x, y);
+  }
+  public setOffsetX(offsetX: number): void {
+    this.setViewport({ offsetX });
+  }
+  public setOffsetY(offsetY: number): void {
+    this.setViewport({ offsetY });
+  }
+  public setScale(scale: number): void {
+    this.setViewport({ scale });
+  }
+  public getOffsetX(): number {
+    return this.viewportManager.getOffsetX();
+  }
+  public getOffsetY(): number {
+    return this.viewportManager.getOffsetY();
+  }
+  public getScale(): number {
+    return this.viewportManager.getScale();
+  }
+  public getDevicePixelRatio(): number {
+    return this.viewportManager.getDevicePixelRatio();
+  }
+  public findComponentAt(x: number, y: number): Component<any> | null {
+    return this.componentManager.findComponentAt(x, y);
+  }
+  public getHoveredComponent(): Component<any> | null {
+    return this.componentManager.getHoveredComponent();
+  }
+  public setHoveredComponent(component: Component<any> | null): void {
+    this.assertAlive();
+    this.componentManager.setHoveredComponent(component);
+  }
+  public getPendingConnectionPort(): Port | null {
+    return this.componentManager.getPendingConnectionPort();
+  }
+  public setPendingConnectionPort(port: Port | null): void {
+    this.assertAlive();
+    this.componentManager.setPendingConnectionPort(port);
+  }
+  public on<T extends EventType>(
+    event: T,
+    callback: (payload?: EventPayloads[T]) => void,
+  ): () => void {
+    this.assertAlive();
+    this.eventBus.on(event, callback);
+    return () => this.eventBus.off(event, callback);
+  }
+
+  /** Returns a detached snapshot, suitable for storage or inspection. */
+  public toJSON(): EditorState {
+    this.assertAlive();
+    return cloneJSON({
+      version: 1,
+      viewport: this.getViewport(),
+      styles: this.styleManager.getDefaultStyles(),
+      nodes: this.getNodes().map((node) => ({
+        id: node.id,
+        position: { ...node.position },
+        label: node.label,
+        data: node.data,
+        style: this.styleManager.getBaseStyle(node),
+        ports: node.ports.map((port) => ({
+          id: port.id,
+          type: port.type,
+          position: { ...port.position },
+          style: this.styleManager.getBaseStyle(port),
+        })),
+      })),
+      connections: this.getConnections().map((connection) => ({
+        id: connection.id,
+        sourcePortId: connection.sourcePort.id,
+        targetPortId: connection.targetPort.id,
+        style: this.styleManager.getBaseStyle(connection),
+      })),
+    }) as EditorState;
+  }
+  public serialize(): string {
+    return JSON.stringify(this.toJSON());
+  }
+
+  /** Replaces graph contents after validating the entire snapshot. */
+  public deserialize(input: string | EditorState): void {
+    this.assertAlive();
+    const state = parseEditorState(input);
+    this.clear();
+    this.styleManager.replaceDefaultStyles(state.styles);
+    const ports = new Map<string, Port>();
+    for (const saved of state.nodes) {
+      const node = this.addNode(saved);
+      node.ports.forEach((port) => ports.set(port.id, port));
+    }
+    for (const saved of state.connections) {
+      this.componentManager.connectPorts(
+        ports.get(saved.sourcePortId)!,
+        ports.get(saved.targetPortId)!,
+        saved,
       );
     }
+    this.setViewport(state.viewport);
   }
 
-  private onTransitionableStyleChanged<T>(
-    component: Component<T> | Entity,
-    updatedStyles: ComputedStyleChange<T>
-  ) {
-    console.log('onTransitionableNodeStyleChanged: ', updatedStyles);
-    const { currentState, previousState } = updatedStyles;
-    Object.entries(currentState).forEach(([key, value]) => {
-      const unwrappedPreviousValue = this.styleManager.getTransitionableProp(
-        previousState[key as keyof T]
-      ) as InterpolatableValue;
-      const unwrappedCurrentValue = this.styleManager.getTransitionableProp(
-        value
-      ) as InterpolatableValue;
-
-      if (unwrappedCurrentValue && unwrappedPreviousValue) {
-        this.animationManager.requestAnimation({
-          from: unwrappedPreviousValue,
-          to: unwrappedCurrentValue,
-          duration: 150,
-          easing: Easing.linear,
-          onUpdate: (currentValue) => {
-            console.log('Transition update: ', currentValue);
-            this.render();
-          },
-          onComplete: (currentValue) => {
-            console.log('Transition complete: ', currentValue);
-          },
-        });
-      }
-    });
-  }
-
-  /**
-   * The single pass render: draws all nodes & connections.
-   */
-  public render() {
-    this.renderer.renderScene({
-      nodes: this.nodes,
-      connections: this.connections,
-      transform: {
-        scale: this.scale,
-        offsetX: this.offsetX,
-        offsetY: this.offsetY,
-      },
-      pendingConnection: {
-        port: this.pendingConnectionPort,
-        mousePosition: this.mousePosition,
-      },
-    });
-  }
-
-  /**
-   * Add a node to the editor.
-   */
-  public addNode(params: AddNodeParams) {
-    const defaultStyle = this.styleManager.getDefaultStyles();
-
-    const unwrappedNodeStyle = this.styleManager.getTransitionableProps(
-      params.style || defaultStyle.node
-    );
-
-    const ports = params.ports?.map((p) => {
-      let position;
-      if (p.type === 'input') {
-        position = {
-          // inputs are fixed to the left side of the node
-          x: 0,
-          y: Math.min(unwrappedNodeStyle.height, Math.max(0, p.position.y)),
-        };
-      } else if (p.type === 'output') {
-        position = {
-          // outputs are fixed to the right side of the node
-          x: unwrappedNodeStyle.width,
-          y: Math.min(unwrappedNodeStyle.height, Math.max(0, p.position.y)),
-        };
-      }
-
-      const port = new Port({
-        position: position ?? p.position,
-        type: p.type,
-        styleManager: this.styleManager,
-      });
-
-      // this.styleManager.setPortStyle(port, p.style);
-
-      return port;
-    });
-    const node = new Node({
-      position:
-        params.position ||
-        this.getRandomPositionInViewport(unwrappedNodeStyle.width, unwrappedNodeStyle.height),
-      label: params.label,
-      ports,
-      data: params.data,
-      styleManager: this.styleManager,
-    });
-
-    if (node.ports) {
-      node.ports.forEach((p) => {
-        p.node = node;
-      });
-    }
-
-    if (params.style) {
-      this.styleManager.setNodeStyle(node, params.style);
-    }
-
-    this.nodes.push(node);
-    this.render();
-    return node;
-  }
-
-  /**
-   * Remove a node + its connections.
-   */
-  public removeNode(nodeId: string) {
-    // remove connections referencing ports of this node
-    const node = this.nodes.find((n) => n.id === nodeId);
-    if (!node) {
-      throw new Error('Node not found');
-    }
-
-    this.connections = this.connections.filter(
-      (c) => !(c.sourcePort.node === node || c.targetPort.node === node)
-    );
-
-    // remove node
-    this.nodes = this.nodes.filter((n) => n !== node);
-    this.styleManager.deleteNodeStyle(node);
-    this.render();
-  }
-
-  /**
-   * Connect two ports together. Also checks for duplicates.
-   */
-  public connectPorts(portA: Port, portB: Port) {
-    // Validate ports are of compatible types
-    if (portA.type === portB.type) {
-      throw new Error('Cannot connect ports of the same type');
-    }
-
-    // Don't connect if they're on the same node, or already connected
-    if (portA.node === portB.node) return;
-
-    const existing = this.connections.find(
-      (c) =>
-        (c.sourcePort === portA && c.targetPort === portB) ||
-        (c.sourcePort === portB && c.targetPort === portA)
-    );
-    if (existing) return; // already connected
-
-    // Determine source and target ports based on type
-    const [sourcePort, targetPort] = portA.type === 'output' ? [portA, portB] : [portB, portA];
-
-    // Create connection
-    const conn = new Connection(sourcePort, targetPort, this.styleManager);
-    this.styleManager.setConnectionStyle(conn);
-
-    this.connections.push(conn);
-    this.render();
-  }
-
-  /**
-   * Disconnect a connection from the editor.
-   */
-  public disconnect(connection: Connection) {
-    this.connections = this.connections.filter((c) => c !== connection);
-    connection.disconnect();
-    this.render();
-  }
-
-  /**
-   * Clears all nodes & connections
-   */
-  public clear() {
-    this.nodes = [];
-    this.connections = [];
-    this.render();
-  }
-
-  public getNodes() {
-    return this.nodes;
-  }
-
-  public getConnections() {
-    return this.connections;
-  }
-
-  public getScale() {
-    return this.scale;
-  }
-
-  public getOffsetX() {
-    return this.offsetX;
-  }
-
-  public getOffsetY() {
-    return this.offsetY;
-  }
-
-  /**
-   * Returns the device pixel ratio of the window.
-   */
-  public getDevicePixelRatio() {
-    return window.devicePixelRatio || 1;
-  }
-
-  public setOffsetX(x: number): void {
-    this.offsetX = x;
-  }
-  public setOffsetY(y: number): void {
-    this.offsetY = y;
-  }
-
-  public setScale(scale: number): void {
-    this.scale = scale;
-  }
-
-  public setMousePosition(position: Position | null): void {
-    this.mousePosition = position;
-  }
-
-  public getHoveredComponent(): Component<any> | null {
-    return this.hoveredComponent;
-  }
-
-  public setHoveredComponent(component: Component<any> | null): void {
-    this.hoveredComponent = component;
-  }
-
-  public getViewportSize(): Size {
-    const rect = this.canvas.getBoundingClientRect();
-    return {
-      width: rect.width,
-      height: rect.height,
+  private openContextMenu(
+    payload: NonNullable<EventPayloads[EventType.CONTEXT_MENU_OPEN]>,
+  ): void {
+    if (this.editorConfig.contextMenu === false) return;
+    const context: ContextMenuContext = {
+      node: payload.component instanceof Node ? payload.component : undefined,
+      position: this.toWorld(payload.position.x, payload.position.y),
     };
+    const items =
+      typeof this.editorConfig.contextMenu === 'function'
+        ? this.editorConfig.contextMenu(context)
+        : context.node
+          ? [{ label: 'Delete node', onSelect: () => this.removeNode(context.node!.id) }]
+          : [
+              {
+                label: 'Add node',
+                onSelect: () => this.addNode({ position: context.position }),
+              },
+            ];
+    this.menu.open(payload.position, context, items);
   }
-
-  public getPendingConnectionPort(): Port | null {
-    return this.pendingConnectionPort;
+  public closeContextMenu(): void {
+    this.menu.close();
   }
-
-  public setPendingConnectionPort(port: Port | null): void {
-    this.pendingConnectionPort = port;
+  public getContextMenuElement(): HTMLElement {
+    return this.menu.element;
   }
-
-  // Convert from screen coords => world coords
-  public toWorld(screenX: number, screenY: number): Position {
-    return {
-      x: (screenX - this.offsetX) / this.scale,
-      y: (screenY - this.offsetY) / this.scale,
-    };
-  }
-
-  public findComponentAt(screenX: number, screenY: number): Component<any> | null {
-    const defaultStyle = this.styleManager.getDefaultStyles();
-    const unwrappedDefaultNodeStyle = this.styleManager.getTransitionableProps(defaultStyle.node);
-    const unwrappedDefaultPortStyle = this.styleManager.getTransitionableProps(defaultStyle.port);
-
-    // Convert screen coordinates to world coordinates
-    const wPos = this.toWorld(screenX, screenY);
-
-    // First, check for ports since they are often smaller and might be "on top" of nodes.
-    for (const node of this.nodes) {
-      for (const port of node.ports) {
-        const portStyle = this.styleManager.getPortStyle(port);
-        const unwrappedPortStyle = portStyle
-          ? this.styleManager.getTransitionableProps(portStyle.currentState)
-          : unwrappedDefaultPortStyle;
-        const px = node.position.x + port.position.x;
-        const py = node.position.y + port.position.y;
-        const clickableRadius = unwrappedPortStyle.radius;
-        const dx = wPos.x - px;
-        const dy = wPos.y - py;
-        if (dx * dx + dy * dy <= clickableRadius * clickableRadius) {
-          return port;
-        }
-      }
-    }
-
-    // If no port is found, check the nodes.
-    // Iterate from topmost (last in array) to bottom-most.
-    for (let i = this.nodes.length - 1; i >= 0; i--) {
-      const node = this.nodes[i];
-      const nodeStyle = this.styleManager.getNodeStyle(node);
-      const unwrappedNodeStyle = nodeStyle
-        ? this.styleManager.getTransitionableProps(nodeStyle.currentState)
-        : unwrappedDefaultNodeStyle;
-      if (
-        wPos.x >= node.position.x &&
-        wPos.x <= node.position.x + unwrappedNodeStyle.width &&
-        wPos.y >= node.position.y &&
-        wPos.y <= node.position.y + unwrappedNodeStyle.height
-      ) {
-        return node;
-      }
-    }
-
-    return null;
-  }
-
   public getAnimationManager() {
     return this.animationManager;
   }
-
   public getBackgroundRenderer() {
     return this.backgroundRenderer;
   }
-
-  public getCanvas() {
+  public getStyleManager() {
+    return this.styleManager;
+  }
+  public getComponentManager() {
+    return this.componentManager;
+  }
+  public getViewportManager() {
+    return this.viewportManager;
+  }
+  public getCanvas(): HTMLCanvasElement {
     return this.canvas;
   }
-
-  public getBackgroundCanvas() {
+  public getBackgroundCanvas(): HTMLCanvasElement {
     return this.backgroundCanvas;
   }
 
-  /**
-   * Picks a random point *in screen coordinates* within the visible canvas,
-   * converts it to *world coordinates*, and returns it.
-   */
-  private getRandomPositionInViewport(width: number, height: number): Position {
-    const viewportSize = this.getViewportSize();
-    const viewportWidth = viewportSize.width;
-    const viewportHeight = viewportSize.height;
-
-    // Calculate the visible area in world coordinates
-    const worldLeft = -this.offsetX / this.scale;
-    const worldRight = (viewportWidth - this.offsetX) / this.scale;
-    const worldTop = -this.offsetY / this.scale;
-    const worldBottom = (viewportHeight - this.offsetY) / this.scale;
-
-    // Determine the maximum x and y where the component can fit
-    const maxX = Math.max(worldLeft, worldRight - width);
-    const maxY = Math.max(worldTop, worldBottom - height);
-
-    // Generate a random position within the valid range
-    const x = Math.random() * (maxX - worldLeft) + worldLeft;
-    const y = Math.random() * (maxY - worldTop) + worldTop;
-
-    return { x, y };
+  /** Stops frames, observers, input, and animations, preserving unrelated container content. */
+  public destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    if (this.frameId !== null) cancelAnimationFrame(this.frameId);
+    this.frameId = null;
+    this.domEvents.destroy();
+    this.componentManager.clear();
+    this.animationManager.clear();
+    this.styleManager.resetAll();
+    this.eventBus.clear();
+    this.customEvents.clear();
+    this.menu.destroy();
+    this.canvas.remove();
+    this.backgroundCanvas.remove();
+    if (this.changedPosition && this.container.style.position === 'relative')
+      this.container.style.position = this.originalPosition;
+  }
+  public dispose(): void {
+    this.destroy();
   }
 }

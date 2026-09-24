@@ -3,6 +3,8 @@ import { Connection } from '../components/connection';
 import { Port } from '../components/port';
 import { Node } from '../components/node';
 import { Component, ComponentType, Entity } from '../components/component';
+import { EventBus } from '../events/eventBus';
+import { EventType } from '../events/eventType';
 
 type UnwrapTransitionableValue<V> = V extends Transitionable<infer U> ? U : V;
 
@@ -10,12 +12,12 @@ export type UnTransitionableStyle<T> = {
   [K in keyof T]: UnwrapTransitionableValue<T[K]>;
 };
 
-interface Transitionable<T = any> {
+export interface Transitionable<T = any> {
   transition?: boolean;
   value: T;
 }
 
-type TransitionableValue<T> = T | Transitionable<T>;
+export type TransitionableValue<T> = T | Transitionable<T>;
 
 interface Style {
   [key: string]: TransitionableValue<any>;
@@ -171,7 +173,7 @@ const defaultNodeStyle: NodeStyle = {
   borderWidth: 2,
   borderRadius: 8,
   labelColor: '#FFFFFF',
-  labelFont: '16px Inter, serif',
+  labelFont: '16px Inter, system-ui, sans-serif',
 };
 
 const defaultConnectionStyle: ConnectionStyle = {
@@ -213,11 +215,25 @@ export const defaultStyles: EditorStyles = {
 
 export class StyleManager {
   private defaultStyles!: EditorStyles;
+  private changingHover = false;
+  private hoverStyles = new WeakMap<Entity, ComponentStyleState<any>>();
   private nodeStyles = new ObservableMap<Node, StyleState<NodeStyle>>();
   private connectionStyles = new ObservableMap<Connection, StyleState<ConnectionStyle>>();
   private portStyles = new ObservableMap<Port, StyleState<PortStyle>>();
 
-  constructor(styles?: Partial<EditorStyles>) {
+  private eventBus: EventBus;
+
+  constructor(eventBus: EventBus, styles?: Partial<EditorStyles>) {
+    this.eventBus = eventBus;
+    const observe = <K, V>(map: ObservableMap<K, V>) => {
+      map.on('add', () => this.invalidate());
+      map.on('update', () => this.invalidate());
+      map.on('delete', () => this.invalidate());
+      map.on('clear', () => this.invalidate());
+    };
+    observe(this.nodeStyles);
+    observe(this.portStyles);
+    observe(this.connectionStyles);
     if (styles) {
       this.setDefaultStyles(styles);
     } else {
@@ -225,9 +241,46 @@ export class StyleManager {
     }
   }
 
+  public getBaseStyle(entity: Entity): ComponentStyleState<any> {
+    return this.hoverStyles.get(entity) ?? this.getEntityStyle(entity)?.currentState ?? {};
+  }
+
+  private getEntityStyle(entity: Entity): StyleState<any> | undefined {
+    if (entity instanceof Node) return this.nodeStyles.get(entity);
+    if (entity instanceof Port) return this.portStyles.get(entity);
+    return this.connectionStyles.get(entity as Connection);
+  }
+
+  public setHovered(entity: Node | Port | Connection, hovered: boolean): void {
+    if (entity.isHovered === hovered) return;
+    entity.isHovered = hovered;
+    const state = this.getEntityStyle(entity);
+    if (!state) return;
+    let update: ComponentStyleState<any>;
+    if (hovered) {
+      this.hoverStyles.set(entity, state.currentState);
+      update = state.currentState.hover ?? {};
+    } else {
+      update = this.hoverStyles.get(entity) ?? state.currentState;
+      this.hoverStyles.delete(entity);
+    }
+    this.changingHover = true;
+    try {
+      if (entity instanceof Node) this.setNodeStyle(entity, update);
+      else if (entity instanceof Port) this.setPortStyle(entity, update);
+      else this.setConnectionStyle(entity, update);
+    } finally {
+      this.changingHover = false;
+    }
+  }
+
+  public invalidate(): void {
+    this.eventBus.emit(EventType.SCENE_CHANGED);
+  }
+
   public onTransitionableStyleChanged<T>(
     componentType: ComponentType,
-    callback: (component: Component<T> | Entity, updatedProps: ComputedStyleChange<T>) => void
+    callback: (component: Component<T> | Entity, updatedProps: ComputedStyleChange<T>) => void,
   ) {
     switch (componentType) {
       case ComponentType.Node: {
@@ -236,8 +289,8 @@ export class StyleManager {
             key as Component<T>,
             oldValue as StyleState<T>,
             newValue as StyleState<T>,
-            callback
-          )
+            callback,
+          ),
         );
         break;
       }
@@ -247,8 +300,8 @@ export class StyleManager {
             key as Entity,
             oldValue as StyleState<T>,
             newValue as StyleState<T>,
-            callback
-          )
+            callback,
+          ),
         );
         break;
       }
@@ -258,8 +311,8 @@ export class StyleManager {
             key as Component<T>,
             oldValue as StyleState<T>,
             newValue as StyleState<T>,
-            callback
-          )
+            callback,
+          ),
         );
         break;
       }
@@ -268,45 +321,34 @@ export class StyleManager {
 
   public onAnimation<T>(
     componentType: ComponentType,
-    callback: (component: Component<T> | Entity, updatedProps: ComputedStyleChange<T>) => void
+    callback: (component: Component<T> | Entity, updatedProps: ComputedStyleChange<T>) => void,
   ) {
-    switch (componentType) {
-      case ComponentType.Node: {
-        this.nodeStyles.on('add', (key, value) =>
-          this.computeAnimationAdd(key as Component<T>, value as StyleState<T>, callback)
-        );
-        break;
-      }
-      case ComponentType.Connection: {
-        this.connectionStyles.on('add', (key, value) =>
-          this.computeAnimationAdd(
-            key as Entity,
-            value as StyleState<T>,
-
-            callback
-          )
-        );
-        break;
-      }
-      case ComponentType.Port: {
-        this.portStyles.on('add', (key, value) =>
-          this.computeAnimationAdd(
-            key as Component<T>,
-            value as StyleState<T>,
-
-            callback
-          )
-        );
-        break;
-      }
-    }
+    const subscribe = <K extends Entity, S>(map: ObservableMap<K, StyleState<S>>) => {
+      map.on('add', (entity, state) =>
+        this.computeAnimationAdd(entity, state as unknown as StyleState<T>, callback),
+      );
+      map.on('update', (entity, previous, current) => {
+        if (
+          JSON.stringify(previous.currentState.animation) ===
+          JSON.stringify(current.currentState.animation)
+        )
+          return;
+        callback(entity, {
+          previousState: { animation: previous.currentState.animation },
+          currentState: { animation: current.currentState.animation },
+        } as unknown as ComputedStyleChange<T>);
+      });
+    };
+    if (componentType === ComponentType.Node) subscribe(this.nodeStyles);
+    else if (componentType === ComponentType.Port) subscribe(this.portStyles);
+    else subscribe(this.connectionStyles);
   }
 
   private computeStyleUpdate<T>(
     component: Component<T> | Entity,
     oldValue: StyleState<T>,
     newValue: StyleState<T>,
-    callback: (component: Component<T> | Entity, updatedProps: ComputedStyleChange<T>) => void
+    callback: (component: Component<T> | Entity, updatedProps: ComputedStyleChange<T>) => void,
   ): ComputedStyleChange<T> {
     const updatedProps = Object.entries(newValue.currentState as Record<string, any>).reduce(
       (acc, [key, value]) => {
@@ -316,16 +358,16 @@ export class StyleManager {
           key !== 'active' &&
           key !== 'animation'
         ) {
-          console.log(key, value);
           (acc.currentState as Record<string, any>)[key] = value;
-          (acc.previousState as Record<string, any>)[key] = oldValue.currentState[key as keyof T];
+          (acc.previousState as Record<string, any>)[key] =
+            oldValue.currentState[key as keyof T];
         }
         return acc;
       },
-      { currentState: {}, previousState: {} } as ComputedStyleChange<T>
+      { currentState: {}, previousState: {} } as ComputedStyleChange<T>,
     );
 
-    if (Object.keys(updatedProps).length > 0) {
+    if (Object.keys(updatedProps.currentState).length > 0) {
       callback(component, updatedProps);
     }
 
@@ -335,7 +377,7 @@ export class StyleManager {
   private computeAnimationAdd<T>(
     component: Component<T> | Entity,
     state: StyleState<T>,
-    callback: (component: Component<T> | Entity, props: ComputedStyleChange<T>) => void
+    callback: (component: Component<T> | Entity, props: ComputedStyleChange<T>) => void,
   ): ComputedStyleChange<T> {
     const props = Object.entries(state.currentState as Record<string, any>).reduce(
       (acc, [key, value]) => {
@@ -344,7 +386,7 @@ export class StyleManager {
         }
         return acc;
       },
-      { currentState: {}, previousState: {} } as ComputedStyleChange<T>
+      { currentState: {}, previousState: {} } as ComputedStyleChange<T>,
     );
 
     if (Object.keys(props).length > 0) {
@@ -354,38 +396,49 @@ export class StyleManager {
     return props;
   }
 
-  getDefaultStyles() {
+  public getDefaultStyles() {
     return this.defaultStyles;
+  }
+
+  public replaceDefaultStyles(styles: Partial<NewDefaultEditorStyles>): void {
+    this.defaultStyles = JSON.parse(JSON.stringify(defaultStyles)) as EditorStyles;
+    this.setDefaultStyles(styles);
   }
 
   setDefaultStyles(styles: Partial<NewDefaultEditorStyles>) {
     this.defaultStyles = {
       node: {
         ...defaultStyles.node,
+        ...this.defaultStyles?.node,
         ...styles.node,
       },
       connection: {
         ...defaultStyles.connection,
+        ...this.defaultStyles?.connection,
         ...styles.connection,
       },
       port: {
         ...defaultStyles.port,
+        ...this.defaultStyles?.port,
         ...styles.port,
       },
     };
   }
 
-  private isTransitionable<T>(
-    value: TransitionableValue<T> | GradientDefinition
+  public isTransitionable<T>(
+    value: TransitionableValue<T> | GradientDefinition,
   ): value is Transitionable<T> {
-    return (value as Transitionable<T>).transition !== undefined;
+    return value !== null && typeof value === 'object' && 'value' in value;
   }
 
   public isGradientDefinition<T>(
-    value: TransitionableValue<T> | GradientDefinition
+    value: TransitionableValue<T> | GradientDefinition,
   ): value is GradientDefinition {
     return (
-      value && typeof value === 'object' && !this.isTransitionable(value) && 'colorStops' in value
+      value &&
+      typeof value === 'object' &&
+      !this.isTransitionable(value) &&
+      'colorStops' in value
     );
   }
 
@@ -393,46 +446,8 @@ export class StyleManager {
     return this.isTransitionable(prop) ? prop.value : prop;
   }
 
-  // getTransitionableProps<T extends Style>(
-  //   style: StyleStateParams<T>
-  // ): ComputedStyle<ComponentStyleState<T>> {
-  //   // A helper that recursively unwraps transitionable properties.
-  //   const recursiveUnwrap = (input: any): any => {
-  //     // Return early for null/undefined values.
-  //     if (input === null || input === undefined) {
-  //       return input;
-  //     }
-  //     // If the value is a transitionable, unwrap it and then try unwrapping its value recursively.
-  //     if (this.isTransitionable(input)) {
-  //       return recursiveUnwrap(input.value);
-  //     }
-  //     // If the value is a gradient definition, assume it is already in its final form.
-  //     if (this.isGradientDefinition(input)) {
-  //       return input;
-  //     }
-  //     // If the value is an array, recursively process each element.
-  //     if (Array.isArray(input)) {
-  //       return input.map(recursiveUnwrap);
-  //     }
-  //     // If the value is a plain object, process each key.
-  //     if (typeof input === 'object') {
-  //       const result: any = {};
-  //       for (const key in input) {
-  //         if (input.hasOwnProperty(key)) {
-  //           result[key] = recursiveUnwrap(input[key]);
-  //         }
-  //       }
-  //       return result;
-  //     }
-  //     // For any other type (number, string, boolean, etc.), just return it.
-  //     return input;
-  //   };
-
-  //   return recursiveUnwrap(style);
-  // }
-
   getTransitionableProps<T extends Style>(
-    style: StyleStateParams<T>
+    style: StyleStateParams<T>,
   ): ComputedStyle<ComponentStyleState<T>> {
     const computed = {} as ComputedStyle<ComponentStyleState<T>>;
 
@@ -445,7 +460,7 @@ export class StyleManager {
             (acc as any)[subKey] = this.getTransitionableProp(subValue);
             return acc;
           },
-          {} as any
+          {} as any,
         );
       } else {
         (computed as any)[key] = this.getTransitionableProp(value);
@@ -467,55 +482,59 @@ export class StyleManager {
     return this.portStyles.get(port);
   }
 
-  /**
-   * Instead of mutating an existing style state,
-   * we create a new state instance with the update.
-   */
-  setNodeStyle(node: Node, style?: Partial<NodeStyle>) {
-    const currentStyle = this.nodeStyles.get(node);
-
-    if (!currentStyle) {
-      const initialState: ComponentStyleState<NodeStyle> = { ...this.defaultStyles.node, ...style };
-      this.nodeStyles.set(node, new StyleState<NodeStyle>(initialState));
+  private setStyle<K extends Entity, T>(
+    entity: K,
+    map: ObservableMap<K, StyleState<T>>,
+    defaults: ComponentStyleState<T>,
+    update?: StyleStateParams<T>,
+  ): void {
+    const current = map.get(entity);
+    const hoveredBase = this.hoverStyles.get(entity);
+    if (hoveredBase && !this.changingHover) {
+      const nextBase = new StyleState<T>(hoveredBase).withUpdate(update ?? {}).currentState;
+      this.hoverStyles.set(entity, nextBase);
+      map.set(
+        entity,
+        new StyleState<T>({ ...nextBase, ...nextBase.hover }, current?.currentState),
+      );
     } else {
-      // Create a new immutable state with the update.
-      const newState = currentStyle.withUpdate(style || {});
-      this.nodeStyles.set(node, newState);
+      map.set(
+        entity,
+        current
+          ? current.withUpdate(update ?? {})
+          : new StyleState<T>({ ...defaults, ...update }),
+      );
     }
   }
 
-  setConnectionStyle(connection: Connection, style?: Partial<ConnectionStyle>) {
-    const currentStyle = this.connectionStyles.get(connection);
-
-    if (!currentStyle) {
-      const initialState: ComponentStyleState<ConnectionStyle> = {
-        ...this.defaultStyles.connection,
-        ...style,
-      };
-      this.connectionStyles.set(connection, new StyleState<ConnectionStyle>(initialState));
-    } else {
-      const newState = currentStyle.withUpdate(style || {});
-      this.connectionStyles.set(connection, newState);
-    }
+  setNodeStyle(node: Node, style?: StyleStateParams<NodeStyle>) {
+    this.setStyle(node, this.nodeStyles, this.defaultStyles.node, style);
+    node.updatePortPositions();
   }
-
-  setPortStyle(port: Port, style?: Partial<PortStyle>) {
-    const currentStyle = this.portStyles.get(port);
-
-    if (!currentStyle) {
-      const initialState: ComponentStyleState<PortStyle> = { ...this.defaultStyles.port, ...style };
-      this.portStyles.set(port, new StyleState<PortStyle>(initialState));
-    } else {
-      const newState = currentStyle.withUpdate(style || {});
-      this.portStyles.set(port, newState);
-    }
+  setConnectionStyle(connection: Connection, style?: StyleStateParams<ConnectionStyle>) {
+    this.setStyle(connection, this.connectionStyles, this.defaultStyles.connection, style);
+  }
+  setPortStyle(port: Port, style?: StyleStateParams<PortStyle>) {
+    this.setStyle(port, this.portStyles, this.defaultStyles.port, style);
   }
 
   deleteNodeStyle(node: Node) {
+    this.hoverStyles.delete(node);
     this.nodeStyles.delete(node);
   }
 
+  deleteConnectionStyle(connection: Connection) {
+    this.hoverStyles.delete(connection);
+    this.connectionStyles.delete(connection);
+  }
+
+  deletePortStyle(port: Port) {
+    this.hoverStyles.delete(port);
+    this.portStyles.delete(port);
+  }
+
   resetAll() {
+    this.hoverStyles = new WeakMap();
     this.nodeStyles.clear();
     this.connectionStyles.clear();
     this.portStyles.clear();

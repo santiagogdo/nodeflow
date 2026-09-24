@@ -1,54 +1,66 @@
 import './contextMenu.css';
-import contextMenu from './contextMenu.html?raw';
-import { type Node } from '../components/node';
+import type { Node } from '../components/node';
+import type { Position } from '../../utils/interfaces';
 
-interface ToggleContextMenuParams {
-  position: {
-    x: number;
-    y: number;
-  };
-  reopen?: boolean;
+export interface ContextMenuContext {
   node?: Node;
+  /** Position in graph coordinates. */
+  position: Position;
+}
+export interface ContextMenuItem {
+  label: string;
+  onSelect: (context: ContextMenuContext) => void;
+  disabled?: boolean;
 }
 
-export function createContextMenu() {
-  const menu = new DOMParser().parseFromString(contextMenu, 'text/html').body.firstElementChild;
+/** Every editor owns its own menu, DOM, and actions. */
+export class ContextMenu {
+  public readonly element = document.createElement('div');
 
-  if (!menu) {
-    throw new Error('Failed to create context menu');
+  constructor() {
+    this.element.className = 'nodeflow-context-menu';
+    this.element.setAttribute('role', 'menu');
+    this.element.hidden = true;
   }
 
-  return menu;
-}
-
-export function getContextMenu() {
-  const menu = document.getElementById('canvas-context-menu');
-  if (!menu) {
-    throw new Error('Failed to get context menu');
-  }
-  return menu;
-}
-
-export function toggleContextMenu(params: ToggleContextMenuParams) {
-  const menu = document.getElementById('canvas-context-menu');
-  if (menu) {
-    if (menu.classList.contains('scale-in-center')) {
-      menu.classList.remove('scale-in-center');
-      menu.classList.add('scale-out-center');
-    } else {
-      menu.style.left = `${params.position.x}px`;
-      menu.style.top = `${params.position.y}px`;
-      menu.classList.remove('scale-out-center');
-      menu.classList.add('scale-in-center');
+  public open(
+    position: Position,
+    context: ContextMenuContext,
+    items: ContextMenuItem[],
+  ): void {
+    this.element.replaceChildren();
+    if (!items.length) {
+      this.close();
+      return;
     }
-
-    if (params.reopen) {
-      requestAnimationFrame(() => {
-        menu.style.left = `${params.position.x}px`;
-        menu.style.top = `${params.position.y}px`;
-        menu.classList.remove('scale-out-center');
-        menu.classList.add('scale-in-center');
+    for (const item of items) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('role', 'menuitem');
+      button.textContent = item.label;
+      button.disabled = item.disabled ?? false;
+      button.addEventListener('click', () => {
+        this.close();
+        item.onSelect(context);
       });
+      this.element.append(button);
     }
+    this.element.style.left = `${position.x}px`;
+    this.element.style.top = `${position.y}px`;
+    this.element.hidden = false;
+    const parent = this.element.parentElement;
+    if (parent) {
+      this.element.style.left = `${Math.max(0, Math.min(position.x, parent.clientWidth - this.element.offsetWidth))}px`;
+      this.element.style.top = `${Math.max(0, Math.min(position.y, parent.clientHeight - this.element.offsetHeight))}px`;
+    }
+  }
+
+  public close(): void {
+    this.element.hidden = true;
+    this.element.replaceChildren();
+  }
+  public destroy(): void {
+    this.close();
+    this.element.remove();
   }
 }

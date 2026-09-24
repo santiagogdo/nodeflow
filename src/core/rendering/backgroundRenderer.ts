@@ -1,20 +1,40 @@
-import { Editor } from '../core/editor/editor';
-import parseColor from '../core/animation/colorParser';
-import { getRGBAString } from '../utils/getRgbaString';
-
-export interface RenderTransform {
-  scale: number;
-  offsetX: number;
-  offsetY: number;
-}
+import { Editor } from '../editor/editor';
+import parseColor from '../animation/colorParser';
+import { getRGBAString } from '../../utils/getRgbaString';
+import { EventType } from '../events/eventType';
+import { EventBus } from '../events/eventBus';
+import { RenderTransform } from './renderer';
 
 export class BackgroundRenderer {
-  constructor(private editor: Editor, private ctx: CanvasRenderingContext2D) {}
+  private eventBus: EventBus;
+  private backgroundCanvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+
+  constructor(
+    private editor: Editor,
+    eventBus: EventBus,
+  ) {
+    this.eventBus = eventBus;
+
+    this.backgroundCanvas = this.editor.getBackgroundCanvas();
+
+    const ctx = this.backgroundCanvas.getContext('2d');
+
+    if (!ctx) {
+      throw new Error('Cannot get 2D canvas context');
+    }
+
+    this.ctx = ctx;
+
+    this.eventBus.on(EventType.RENDER_BACKGROUND_CANVAS, (payload) => {
+      payload && this.render(payload.renderTransform);
+    });
+  }
 
   public render(transform: RenderTransform) {
-    const devicePixelRatio = this.editor.getDevicePixelRatio();
-    const canvasWidth = this.ctx.canvas.width;
-    const canvasHeight = this.ctx.canvas.height;
+    const devicePixelRatio = this.editor.getViewportManager().getDevicePixelRatio();
+    const canvasWidth = this.backgroundCanvas.width;
+    const canvasHeight = this.backgroundCanvas.height;
 
     // Clear entire canvas
     this.ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -25,7 +45,11 @@ export class BackgroundRenderer {
     this.ctx.scale(devicePixelRatio, devicePixelRatio);
 
     const { grid } = this.editor.editorConfig || {};
-    const minorGridSize = grid?.size || 20;
+    const minorGridSize = grid?.spacing ?? grid?.size ?? 20;
+    if (!Number.isFinite(minorGridSize) || minorGridSize <= 0) {
+      this.ctx.restore();
+      return;
+    }
 
     // Convert canvas size to world size
     const unscaledWidth = canvasWidth / devicePixelRatio / transform.scale;
@@ -49,7 +73,10 @@ export class BackgroundRenderer {
 
     // Apply translation to align with world coordinates
     // This is the key change - we translate by the world-space grid offset
-    this.ctx.translate(transform.offsetX / transform.scale, transform.offsetY / transform.scale);
+    this.ctx.translate(
+      transform.offsetX / transform.scale,
+      transform.offsetY / transform.scale,
+    );
 
     // Now we can draw the grid using world coordinates:
     if (grid) {
@@ -62,7 +89,10 @@ export class BackgroundRenderer {
       } = grid;
 
       const gridColor = parseColor(color);
-      if (!gridColor) return;
+      if (!gridColor) {
+        this.ctx.restore();
+        return;
+      }
 
       const majorGridSize = minorGridSize * 5;
 

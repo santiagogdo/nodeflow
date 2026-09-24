@@ -1,322 +1,115 @@
-import { Editor } from '../src/core/editor/editor';
-import { BackgroundRenderer, RenderTransform } from '../src/rendering/backgroundRenderer';
-import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { getRGBAString } from '../src/utils/getRgbaString';
-import parseColor from '../src/core/animation/colorParser';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Editor } from '../src';
+import type { EditorConfig } from '../src';
 
-describe('BackgroundRenderer', () => {
-  let editor: Editor;
-  let canvas: HTMLCanvasElement;
-  let ctx: CanvasRenderingContext2D;
-  let backgroundRenderer: BackgroundRenderer;
-  let backgroundCanvas: HTMLCanvasElement;
-  let backgroundCtx: CanvasRenderingContext2D;
+describe('background rendering', () => {
+  const editors: Editor[] = [];
+  function create(config: EditorConfig = {}) {
+    const container = document.createElement('div');
+    document.body.append(container);
+    vi.spyOn(container, 'getBoundingClientRect').mockReturnValue({
+      width: 800,
+      height: 600,
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 800,
+      bottom: 600,
+      toJSON() {},
+    });
+    const editor = new Editor(container, config);
+    editors.push(editor);
+    return editor;
+  }
+  afterEach(() => {
+    editors.splice(0).forEach((editor) => editor.destroy());
+  });
 
-  beforeEach(() => {
-    // Create editor with grid config
-    vi.mock('../src/core/contextMenu/contextMenu.ts', () => ({
-      createContextMenu: () => document.createElement('div'),
-      getContextMenu: () => document.createElement('div'),
-      toggleContextMenu: () => {},
-    }));
+  it('applies device pixel ratio, scale, and offset', () => {
+    vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(2);
+    const editor = create({ grid: { spacing: 20, showMinorLines: true } });
+    const ctx = editor.getBackgroundCanvas().getContext('2d')!;
+    const scale = vi.spyOn(ctx, 'scale').mockClear();
+    const translate = vi.spyOn(ctx, 'translate').mockClear();
+    editor.setViewport({ scale: 2, offsetX: 50, offsetY: 100 });
+    expect(editor.getBackgroundCanvas().width).toBe(1600);
+    expect(scale).toHaveBeenNthCalledWith(1, 2, 2);
+    expect(scale).toHaveBeenNthCalledWith(2, 2, 2);
+    expect(translate).toHaveBeenLastCalledWith(25, 50);
+  });
 
-    editor = new Editor(document.createElement('div'), {
+  it('keeps grid lines a constant screen width while zooming', () => {
+    const editor = create({
+      grid: { spacing: 20, showMinorLines: true, showMajorLines: true },
+    });
+    const ctx = editor.getBackgroundCanvas().getContext('2d')!;
+    const width = vi.spyOn(ctx, 'lineWidth', 'set');
+    editor.setScale(2);
+    expect(width).toHaveBeenCalledWith(0.5);
+    expect(width).toHaveBeenCalledWith(1);
+  });
+
+  it('draws minor lines across the visible viewport at configured spacing', () => {
+    const editor = create({ grid: { spacing: 40, showMinorLines: true } });
+    const ctx = editor.getBackgroundCanvas().getContext('2d')!;
+    const move = vi.spyOn(ctx, 'moveTo').mockClear();
+    editor.renderBackground();
+    const verticals = move.mock.calls.filter(([, y]) => y === 0).map(([x]) => x);
+    expect(verticals).toContain(0);
+    expect(verticals).toContain(800);
+    expect(verticals.every((x) => x % 40 === 0)).toBe(true);
+    expect(move.mock.calls.length).toBeGreaterThan(20);
+  });
+
+  it('uses configured colors when rendering', () => {
+    const editor = create({
       grid: {
-        size: 20,
-        color: 'rgba(255, 255, 255, 0.8)',
+        spacing: 20,
+        color: 'rgba(255, 0, 0, 0.5)',
         showMinorLines: true,
         showMajorLines: true,
-        showDots: true,
-        showCrosses: true,
       },
     });
-
-    canvas = editor.getCanvas();
-    ctx = canvas.getContext('2d')!;
-    backgroundRenderer = editor.getBackgroundRenderer();
-    backgroundCanvas = editor.getBackgroundCanvas();
-    backgroundCtx = backgroundCanvas.getContext('2d')!;
+    const ctx = editor.getBackgroundCanvas().getContext('2d')!;
+    const stroke = vi.spyOn(ctx, 'strokeStyle', 'set');
+    editor.renderBackground();
+    expect(stroke).toHaveBeenCalledWith('rgba(255, 0, 0, 0.1)');
+    expect(stroke).toHaveBeenCalledWith('rgba(255, 0, 0, 0.375)');
   });
 
-  it('should apply correct transformations before rendering the grid', () => {
-    const transform: RenderTransform = {
-      scale: 2,
-      offsetX: 50,
-      offsetY: 100,
-    };
-
-    // Fake a high device pixel ratio
-    const devicePixelRatio = 2;
-    vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(devicePixelRatio);
-
-    // Spy on context methods
-    const saveSpy = vi.spyOn(backgroundCtx, 'save').mockClear();
-    const scaleSpy = vi.spyOn(backgroundCtx, 'scale').mockClear();
-    const translateSpy = vi.spyOn(backgroundCtx, 'translate').mockClear();
-    const restoreSpy = vi.spyOn(backgroundCtx, 'restore').mockClear();
-
-    // Account for the initial render
-    backgroundRenderer.render(transform);
-
-    // Check transform call order
-    expect(saveSpy).toHaveBeenCalled(); // Should save context state
-    expect(scaleSpy).toHaveBeenNthCalledWith(1, devicePixelRatio, devicePixelRatio);
-    expect(scaleSpy).toHaveBeenNthCalledWith(2, transform.scale, transform.scale);
-    expect(translateSpy).toHaveBeenCalledWith(
-      transform.offsetX / transform.scale,
-      transform.offsetY / transform.scale
-    );
-    expect(restoreSpy).toHaveBeenCalled(); // Should restore after rendering
+  it('leaves a locked grid fixed during viewport updates', () => {
+    const editor = create({ grid: { spacing: 20, locked: true, showMinorLines: true } });
+    const render = vi.spyOn(editor.getBackgroundRenderer(), 'render');
+    editor.setViewport({ scale: 2, offsetX: 50, offsetY: 70 });
+    expect(render).not.toHaveBeenCalled();
+    editor.renderBackground();
+    expect(render).toHaveBeenLastCalledWith({ scale: 1, offsetX: 0, offsetY: 0 });
   });
 
-  it('should scale the grid line width based on the current zoom level', () => {
-    const transform = {
-      scale: 2,
-      offsetX: 0,
-      offsetY: 0,
-    };
-
-    // Spy on the lineWidth setter
-    const lineWidthSpy = vi.spyOn(backgroundCtx, 'lineWidth', 'set');
-
-    backgroundRenderer.render(transform);
-
-    // Line width should be 1 / transform.scale = 0.5
-    expect(lineWidthSpy).toHaveBeenCalledWith(0.5);
-  });
-
-  it('should render only the visible grid elements within the canvas viewport', () => {
-    const transform = {
-      scale: 1,
-      offsetX: 100,
-      offsetY: 100,
-    };
-
-    const clearRectSpy = vi.spyOn(backgroundCtx, 'clearRect').mockClear();
-    const moveSpy = vi.spyOn(backgroundCtx, 'moveTo').mockClear();
-    const lineSpy = vi.spyOn(backgroundCtx, 'lineTo').mockClear();
-
-    // Account for the initial render
-    backgroundRenderer.render(transform);
-
-    // Verify the entire canvas was cleared in device coordinates:
-    expect(clearRectSpy).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
-
-    // Collect all calls to moveTo(...) and lineTo(...).
-    // NOTE: these are in "world" coords because of the transforms.
-    const allCalls = [...moveSpy.mock.calls, ...lineSpy.mock.calls];
-
-    // Recompute the same bounding box the code uses in "world" coordinates:
-    const devicePixelRatio = editor.getDevicePixelRatio(); // or backgroundRenderer.editor.getDevicePixelRatio()
-    const canvasWidth = ctx.canvas.width;
-    const canvasHeight = ctx.canvas.height;
-
-    // The unscaled (world) width & height of the viewport
-    const unscaledWidth = canvasWidth / devicePixelRatio / transform.scale;
-    const unscaledHeight = canvasHeight / devicePixelRatio / transform.scale;
-
-    // The top-left corner in world coords
-    const viewportLeft = -transform.offsetX / transform.scale;
-    const viewportTop = -transform.offsetY / transform.scale;
-
-    const viewportRight = viewportLeft + unscaledWidth;
-    const viewportBottom = viewportTop + unscaledHeight;
-
-    // The minor grid size from your config
-    const minorGridSize = editor.editorConfig?.grid?.size || 20;
-
-    // startX..endX, startY..endY as in BackgroundRenderer
-    const startX = Math.floor(viewportLeft / minorGridSize) * minorGridSize;
-    const startY = Math.floor(viewportTop / minorGridSize) * minorGridSize;
-    const endX = Math.ceil(viewportRight / minorGridSize) * minorGridSize;
-    const endY = Math.ceil(viewportBottom / minorGridSize) * minorGridSize;
-
-    // Check that each line coordinate is within the computed bounding box
-    for (const [worldX, worldY] of allCalls) {
-      expect(worldX).toBeGreaterThanOrEqual(startX);
-      expect(worldX).toBeLessThanOrEqual(endX);
-      expect(worldY).toBeGreaterThanOrEqual(startY);
-      expect(worldY).toBeLessThanOrEqual(endY);
-    }
-  });
-
-  it('should use the provided grid configuration (size, color, etc.) when rendering', () => {
-    // Re-create editor with a different grid config
-    editor = new Editor(document.createElement('div'), {
-      grid: {
-        size: 40, // Larger grid size
-        color: 'rgba(255, 0, 0, 0.5)', // Different color
-        showMinorLines: true,
-        showMajorLines: true,
-        showDots: false,
-        showCrosses: false,
-      },
-    });
-
-    backgroundRenderer = new BackgroundRenderer(editor, backgroundCtx);
-
-    // Spy on strokeStyle and lineWidth
-    const strokeStyleSpy = vi.spyOn(backgroundCtx, 'strokeStyle', 'set');
-    const lineWidthSpy = vi.spyOn(backgroundCtx, 'lineWidth', 'set');
-
-    backgroundRenderer.render({ scale: 1, offsetX: 0, offsetY: 0 });
-
-    // Make sure it actually sets the correct stroke color
-    const gridColor = parseColor(editor.editorConfig?.grid?.color!);
-    if (!gridColor) return;
-    const minorColor = { ...gridColor, a: gridColor.a * 0.2 };
-    const majorColor = { ...gridColor, a: gridColor.a * 0.75 };
-
-    // Verify minor grid lines use correct color and width
-    expect(strokeStyleSpy).toHaveBeenCalledWith(getRGBAString(minorColor));
-    expect(lineWidthSpy).toHaveBeenCalledWith(1); // At scale 1
-
-    // Verify major grid lines use correct color and width
-    expect(strokeStyleSpy).toHaveBeenCalledWith(getRGBAString(majorColor));
-    expect(lineWidthSpy).toHaveBeenCalledWith(2); // At scale 1
-
-    // Verify grid size by checking line positions
-    const moveSpy = vi.spyOn(backgroundCtx, 'moveTo');
-    const lineSpy = vi.spyOn(backgroundCtx, 'lineTo');
-    const allCalls = [...moveSpy.mock.calls, ...lineSpy.mock.calls];
-
-    // Sample some coordinates to verify 40px grid spacing
-    const gridPositions = allCalls.map((call) => call[0]).filter((x) => x !== 0);
-    const uniquePositions = [...new Set(gridPositions)];
-    const spacings = uniquePositions.slice(1).map((pos, i) => pos - uniquePositions[i]);
-
-    spacings.forEach((spacing) => {
-      expect(spacing).toBe(40);
-    });
-  });
-
-  it('should translate the grid by the correct offset during pan operations', () => {
-    const initialTransform = {
-      scale: 1,
-      offsetX: 0,
-      offsetY: 0,
-    };
-
-    const pannedTransform = {
-      scale: 1,
-      offsetX: 50,
-      offsetY: 50,
-    };
-
-    const translateSpy = vi.spyOn(backgroundCtx, 'translate');
-
-    // Render initial grid
-    backgroundRenderer.render(initialTransform);
-    // The first translate call (after devicePixelRatio & scale) is the offset
-    const [initX, initY] = translateSpy.mock.calls.at(-1) || [0, 0];
-
-    // Render panned grid
-    backgroundRenderer.render(pannedTransform);
-    // The next translate call after clearing old calls
-    const [panX, panY] = translateSpy.mock.calls.at(-1) || [0, 0];
-
-    // Expect an increase of 50 in each direction
-    // (assuming the only difference is the offset)
-    expect(panX - initX).toBe(50);
-    expect(panY - initY).toBe(50);
-  });
-
-  it('should not re-render grid when locked and panning', () => {
-    const container = document.createElement('div');
-    editor = new Editor(container, {
-      grid: { size: 20, color: 'rgba(255, 255, 255, 0.8)', locked: true },
-    });
-
-    canvas = editor.getCanvas();
-
-    // Spy on rendering
-    const renderSpy = vi.spyOn(editor.getBackgroundRenderer(), 'render');
-
-    // Increment the call count to account for the initial render
-    editor.getBackgroundRenderer().render({ scale: 1, offsetX: 0, offsetY: 0 });
-
-    // Initial render happens in constructor
-    expect(renderSpy).toHaveBeenCalledTimes(1);
-
-    // Simulate panning through DOM events
+  it('updates unlocked grids when panning through DOM input', () => {
+    const editor = create({ grid: { spacing: 20, showMinorLines: true } });
+    const canvas = editor.getCanvas();
+    const render = vi.spyOn(editor.getBackgroundRenderer(), 'render');
     canvas.dispatchEvent(
-      new MouseEvent('mousedown', {
-        button: 0, // Left click
-        clientX: 100,
-        clientY: 100,
-      })
+      new MouseEvent('mousedown', { clientX: 100, clientY: 100, bubbles: true }),
     );
-
     canvas.dispatchEvent(
-      new MouseEvent('mousemove', {
-        clientX: 150,
-        clientY: 150,
-      })
+      new MouseEvent('mousemove', { clientX: 150, clientY: 170, bubbles: true }),
     );
-
-    canvas.dispatchEvent(new MouseEvent('mouseup'));
-
-    // Because grid is locked, no additional renders should occur
-    expect(renderSpy).toHaveBeenCalledTimes(1);
-    expect(renderSpy).toHaveBeenLastCalledWith({
-      scale: 1,
-      offsetX: 0,
-      offsetY: 0,
-    });
+    window.dispatchEvent(new MouseEvent('mouseup'));
+    expect(editor.getViewport()).toEqual({ scale: 1, offsetX: 50, offsetY: 70 });
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(render).toHaveBeenLastCalledWith(editor.getViewport());
   });
 
-  it('should re-render grid when unlocked and panning', () => {
-    const container = document.createElement('div');
-    editor = new Editor(container, {
-      grid: {
-        size: 20,
-        color: 'rgba(255, 255, 255, 0.8)',
-        locked: false,
-      },
-    });
-
-    canvas = editor.getCanvas();
-
-    // Spy on the render method
-    backgroundRenderer = editor.getBackgroundRenderer();
-    const renderSpy = vi.spyOn(backgroundRenderer, 'render');
-    // Increment the call count to account for the initial render
-    backgroundRenderer.render({ scale: 1, offsetX: 0, offsetY: 0 });
-
-    // Initial render happens in constructor
-    expect(renderSpy).toHaveBeenCalledTimes(1);
-
-    // Verify the initial render call had the initial transforms
-    expect(renderSpy).toHaveBeenLastCalledWith({
-      scale: 1,
-      offsetX: 0,
-      offsetY: 0,
-    });
-
-    // Simulate panning through DOM events
-    canvas.dispatchEvent(
-      new MouseEvent('mousedown', {
-        button: 0, // Left click
-        clientX: 100,
-        clientY: 100,
-      })
-    );
-
-    canvas.dispatchEvent(
-      new MouseEvent('mousemove', {
-        clientX: 150,
-        clientY: 150,
-      })
-    );
-
-    canvas.dispatchEvent(new MouseEvent('mouseup'));
-
-    // Verify that render was called with updated transforms
-    expect(renderSpy).toHaveBeenCalledTimes(2);
-    expect(renderSpy).toHaveBeenLastCalledWith({
-      scale: 1,
-      offsetX: 50, // difference between mousedown and mousemove X
-      offsetY: 50, // difference between mousedown and mousemove Y
-    });
+  it('restores context state even with an invalid grid configuration', () => {
+    const editor = create({ grid: { spacing: -1, showMinorLines: true } });
+    const ctx = editor.getBackgroundCanvas().getContext('2d')!;
+    const save = vi.spyOn(ctx, 'save').mockClear();
+    const restore = vi.spyOn(ctx, 'restore').mockClear();
+    editor.renderBackground();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledTimes(1);
   });
 });
