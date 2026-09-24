@@ -1,5 +1,7 @@
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
+![nodeflow](https://github.com/user-attachments/assets/14e40f60-1bba-45bc-b774-9b37bc001a80)
+
 # Nodeflow
 
 Nodeflow is a small, framework-independent TypeScript library for graphical node editors. It renders nodes, ports, and connections on canvas, with configurable styles, animations, zoom, and panning.
