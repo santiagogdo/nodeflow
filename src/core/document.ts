@@ -21,6 +21,20 @@ interface HistoryEntry {
   patches: Patch[];
 }
 
+function ownRecord<T>(records: Record<string, T>, id: string): T | undefined {
+  return Object.hasOwn(records, id) ? records[id] : undefined;
+}
+
+function requireRecord<T>(
+  records: Record<string, T>,
+  id: string,
+  kind: string,
+): T {
+  const record = ownRecord(records, id);
+  if (!record) throw new Error(`${kind} does not exist`);
+  return record;
+}
+
 /** A DOM-free document. Commands are validated atomically at the transaction seam. */
 export class GraphDocument {
   private state: DocumentSnapshot;
@@ -200,8 +214,11 @@ export class GraphDocument {
   }
   private apply(command: GraphCommand): string | undefined {
     const document = this.draft!;
-    const graph = document.graphs[command.graphId ?? document.rootGraphId];
-    if (!graph) throw new Error("Graph does not exist");
+    const graph = requireRecord(
+      document.graphs,
+      command.graphId ?? document.rootGraphId,
+      "Graph",
+    );
     const available = (id: string) => {
       assertId(id);
       if (
@@ -243,8 +260,7 @@ export class GraphDocument {
         return id;
       }
       case "update-node": {
-        const node = graph.nodes[command.nodeId];
-        if (!node) throw new Error("Node does not exist");
+        const node = requireRecord(graph.nodes, command.nodeId, "Node");
         const changes = cloneJSON(command.changes);
         graph.nodes[node.id] = {
           ...node,
@@ -255,8 +271,8 @@ export class GraphDocument {
       }
       case "move-nodes":
         for (const [id, position] of Object.entries(command.positions)) {
-          if (!graph.nodes[id]) throw new Error("Node does not exist");
-          graph.nodes[id].position = cloneJSON(position);
+          const node = requireRecord(graph.nodes, id, "Node");
+          node.position = cloneJSON(position);
         }
         break;
       case "remove": {
@@ -298,17 +314,15 @@ export class GraphDocument {
         graph.groups[command.group.id] = cloneJSON(command.group);
         return command.group.id;
       case "update-group": {
-        if (!graph.groups[command.groupId]) {
-          throw new Error("Group does not exist");
-        }
-        Object.assign(
-          graph.groups[command.groupId],
-          cloneJSON(command.changes),
-        );
+        const group = requireRecord(graph.groups, command.groupId, "Group");
+        graph.groups[command.groupId] = {
+          ...group,
+          ...cloneJSON(command.changes),
+        };
         break;
       }
       case "ungroup": {
-        const removed = graph.groups[command.groupId];
+        const removed = ownRecord(graph.groups, command.groupId);
         if (!removed) break;
         for (const group of Object.values(graph.groups)) {
           if (group.parentId === removed.id) {
@@ -317,7 +331,9 @@ export class GraphDocument {
           }
         }
         if (removed.parentId) {
-          graph.groups[removed.parentId].nodeIds.push(...removed.nodeIds);
+          requireRecord(graph.groups, removed.parentId, "Group").nodeIds.push(
+            ...removed.nodeIds,
+          );
         }
         delete graph.groups[removed.id];
         break;
@@ -349,8 +365,10 @@ export class GraphDocument {
   ): string {
     return this.transaction("Create subgraph", () => {
       const document = this.draft!,
-        graph = document.graphs[graphId];
-      const selected = new Set(nodeIds.filter((id) => graph.nodes[id]));
+        graph = requireRecord(document.graphs, graphId, "Graph");
+      const selected = new Set(
+        nodeIds.filter((id) => Object.hasOwn(graph.nodes, id)),
+      );
       if (!selected.size) throw new Error("Select at least one node");
       if (
         [...selected].some(
@@ -491,13 +509,13 @@ export class GraphDocument {
     nodeIds: readonly string[],
     graphId = this.state.rootGraphId,
   ): GraphFragment {
-    const graph = this.state.graphs[graphId],
+    const graph = requireRecord(this.state.graphs, graphId, "Graph"),
       ids = new Set(nodeIds);
     const nodes = Object.values(graph.nodes).filter((node) => ids.has(node.id));
     const definitions: Record<string, GraphRecord> = {};
     const include = (id: string) => {
       if (Object.hasOwn(definitions, id)) return;
-      definitions[id] = this.state.graphs[id];
+      definitions[id] = requireRecord(this.state.graphs, id, "Graph");
       Object.values(definitions[id].nodes).forEach((node) => {
         if (node.subgraphId) include(node.subgraphId);
       });
@@ -550,7 +568,7 @@ export class GraphDocument {
     }
     return this.transaction("Paste nodes", () => {
       const document = this.draft!,
-        graph = document.graphs[graphId],
+        graph = requireRecord(document.graphs, graphId, "Graph"),
         definitions = new Map<string, string>();
       for (const id of Object.keys(content.definitions)) {
         definitions.set(id, uniqueId("graph"));

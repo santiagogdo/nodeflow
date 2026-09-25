@@ -2,11 +2,32 @@ import { assertId, cloneJSON } from "./json.ts";
 import type {
   DeepReadonly,
   DocumentSnapshot,
+  GraphPort,
   GraphRecord,
   NodeDefinition,
   NodeRecord,
   PortDefinition,
 } from "./types.ts";
+
+/** @internal A lookup belongs to one detached snapshot, never a mutable editor. */
+export function createInterfacePortLookup(checkpoint?: () => void) {
+  const indexes = new WeakMap<
+    DeepReadonly<GraphPort[]>,
+    Map<string, DeepReadonly<GraphPort>>
+  >();
+  return (ports: DeepReadonly<GraphPort[]>, id: unknown) => {
+    let index = indexes.get(ports);
+    if (!index) {
+      index = new Map();
+      for (const port of ports) {
+        checkpoint?.();
+        if (!index.has(port.id)) index.set(port.id, port);
+      }
+      indexes.set(ports, index);
+    }
+    return typeof id === "string" ? index.get(id) : undefined;
+  };
+}
 
 export class NodeRegistry {
   private definitions = new Map<string, NodeDefinition>();
@@ -38,6 +59,7 @@ export class NodeRegistry {
     node: DeepReadonly<NodeRecord>,
     graph: DeepReadonly<GraphRecord>,
     document: DeepReadonly<DocumentSnapshot>,
+    interfacePort?: ReturnType<typeof createInterfacePortLookup>,
   ): PortDefinition[] {
     if (node.type === "@subgraph") {
       const nested = node.subgraphId && document.graphs[node.subgraphId];
@@ -57,9 +79,10 @@ export class NodeRegistry {
     }
     if (node.type === "@input" || node.type === "@output") {
       const input = node.type === "@input";
-      const port = (input ? graph.inputs : graph.outputs).find(
-        (port) => port.id === node.data.portId,
-      );
+      const ports = input ? graph.inputs : graph.outputs;
+      const port = interfacePort
+        ? interfacePort(ports, node.data.portId)
+        : ports.find((port) => port.id === node.data.portId);
       if (!port) {
         throw new Error(`Unknown graph interface port: ${node.data.portId}`);
       }

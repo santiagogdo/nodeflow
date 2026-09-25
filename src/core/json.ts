@@ -1,8 +1,13 @@
 import type { JsonValue, Patch } from "./types.ts";
 
 export function cloneJSON<T>(value: T): T {
+  return cloneJSONChecked(value);
+}
+/** Internal cooperative budget hook; public JSON helpers keep their signatures. */
+export function cloneJSONChecked<T>(value: T, checkpoint?: () => void): T {
   const ancestors = new Set<object>();
   function visit(item: unknown): unknown {
+    checkpoint?.();
     if (
       item === null || typeof item === "string" || typeof item === "boolean"
     ) {
@@ -29,9 +34,13 @@ export function cloneJSON<T>(value: T): T {
   return visit(value) as T;
 }
 export function freeze<T>(value: T): T {
+  return freezeChecked(value);
+}
+export function freezeChecked<T>(value: T, checkpoint?: () => void): T {
+  checkpoint?.();
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.freeze(value);
-    Object.values(value).forEach(freeze);
+    Object.values(value).forEach((child) => freezeChecked(child, checkpoint));
   }
   return value;
 }

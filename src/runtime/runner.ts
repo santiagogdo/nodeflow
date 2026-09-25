@@ -1,5 +1,7 @@
-import { NodeRegistry, uniqueId, validateDocument } from "../core/index.ts";
-import { freeze } from "../core/json.ts";
+import { NodeRegistry, uniqueId } from "../core/index.ts";
+import { freezeChecked } from "../core/json.ts";
+import { createInterfacePortLookup } from "../core/registry.ts";
+import { validateDocumentChecked } from "../core/validation.ts";
 import type { ReadonlyDocument } from "../core/types.ts";
 import { SKIP } from "./types.ts";
 import type {
@@ -13,6 +15,43 @@ import type {
   RunOptions,
   RunResult,
 } from "./types.ts";
+
+/** The same UTF-16 ordering as Array.sort(), without re-sorting or shifting. */
+class ReadyNodes {
+  private heap: string[] = [];
+  get size() {
+    return this.heap.length;
+  }
+  push(id: string) {
+    let at = this.heap.length;
+    this.heap.push(id);
+    while (at > 0) {
+      const parent = Math.floor((at - 1) / 2);
+      if (this.heap[parent] <= id) break;
+      this.heap[at] = this.heap[parent];
+      at = parent;
+    }
+    this.heap[at] = id;
+  }
+  pop(): string {
+    const first = this.heap[0], last = this.heap.pop()!;
+    if (this.heap.length) {
+      let at = 0;
+      while (at * 2 + 1 < this.heap.length) {
+        let child = at * 2 + 1;
+        if (
+          child + 1 < this.heap.length &&
+          this.heap[child + 1] < this.heap[child]
+        ) child++;
+        if (last <= this.heap[child]) break;
+        this.heap[at] = this.heap[child];
+        at = child;
+      }
+      this.heap[at] = last;
+    }
+    return first;
+  }
+}
 
 export class Runner {
   private executors = new Map<string, ExecutorDefinition>();
@@ -37,32 +76,52 @@ export class Runner {
     snapshot: ReadonlyDocument,
     graphId = snapshot.rootGraphId,
   ): CompiledRun {
-    const document = freeze(validateDocument(snapshot, this.registry)),
-      order = new Map<string, string[]>();
+    return this.compileChecked(snapshot, graphId);
+  }
+  private compileChecked(
+    snapshot: ReadonlyDocument,
+    graphId: string,
+    checkpoint?: () => void,
+  ): CompiledRun {
+    checkpoint?.();
+    const document = freezeChecked(
+        validateDocumentChecked(snapshot, this.registry, checkpoint),
+        checkpoint,
+      ),
+      order = new Map<string, string[]>(),
+      interfacePort = createInterfacePortLookup(checkpoint);
     const visit = (id: string) => {
+      checkpoint?.();
       if (order.has(id)) return;
       const graph = document.graphs[id];
       if (!graph) throw new Error(`Unknown graph: ${id}`);
       const indegree = new Map(Object.keys(graph.nodes).map((id) => [id, 0]));
       const outgoing = new Map<string, string[]>();
+      const connected = new Map<string, Set<string>>();
       for (const edge of Object.values(graph.connections)) {
+        checkpoint?.();
         indegree.set(edge.target.nodeId, indegree.get(edge.target.nodeId)! + 1);
         const list = outgoing.get(edge.source.nodeId) ?? [];
         list.push(edge.target.nodeId);
         outgoing.set(edge.source.nodeId, list);
+        const ports = connected.get(edge.target.nodeId) ?? new Set<string>();
+        ports.add(edge.target.portId);
+        connected.set(edge.target.nodeId, ports);
       }
-      const ready = [...indegree.keys()]
-          .filter((id) => indegree.get(id) === 0)
-          .sort(),
-        sorted: string[] = [];
-      while (ready.length) {
-        const current = ready.shift()!;
+      const ready = new ReadyNodes(), sorted: string[] = [];
+      for (const [id, degree] of indegree) {
+        checkpoint?.();
+        if (degree === 0) ready.push(id);
+      }
+      while (ready.size) {
+        checkpoint?.();
+        const current = ready.pop();
         sorted.push(current);
         for (const next of outgoing.get(current) ?? []) {
+          checkpoint?.();
           indegree.set(next, indegree.get(next)! - 1);
           if (indegree.get(next) === 0) {
             ready.push(next);
-            ready.sort();
           }
         }
       }
@@ -71,21 +130,26 @@ export class Runner {
       }
       order.set(id, sorted);
       for (const node of Object.values(graph.nodes)) {
+        checkpoint?.();
         if (node.type === "@subgraph") visit(node.subgraphId!);
         else if (!node.type.startsWith("@") && !this.executors.has(node.type)) {
           throw new Error(`No executor registered for ${node.type}`);
         }
-        for (const port of this.registry.ports(node, graph, document)) {
+        for (
+          const port of this.registry.ports(
+            node,
+            graph,
+            document,
+            interfacePort,
+          )
+        ) {
+          checkpoint?.();
           if (
             port.direction === "input" &&
             port.required !== false &&
             port.defaultValue === undefined &&
             !Object.hasOwn(node.data, port.id) &&
-            !Object.values(graph.connections).some(
-              (edge) =>
-                edge.target.nodeId === node.id &&
-                edge.target.portId === port.id,
-            )
+            !connected.get(node.id)?.has(port.id)
           ) {
             throw new Error(
               `Missing required input '${
@@ -97,6 +161,7 @@ export class Runner {
       }
     };
     visit(graphId);
+    checkpoint?.();
     return { document, order };
   }
   run(snapshot: ReadonlyDocument, options: RunOptions = {}): RunHandle {
@@ -121,8 +186,7 @@ export class Runner {
     trigger?: { nodeId: string; payload: unknown },
   ): RunHandle {
     if (this.active) throw new Error("This runner already has an active run");
-    const graphId = options.graphId ?? snapshot.rootGraphId,
-      compiled = this.compile(snapshot, graphId);
+    const graphId = options.graphId ?? snapshot.rootGraphId;
     const timeoutMs = options.timeoutMs ?? 30_000,
       maxExecutions = options.maxExecutions ?? 10_000;
     if (
@@ -160,10 +224,29 @@ export class Runner {
       }
     };
     const check = () => {
+      if (
+        !controller.signal.aborted && performance.now() - started >= timeoutMs
+      ) {
+        timedOut = true;
+        controller.abort("Run timed out");
+      }
       if (controller.signal.aborted) {
         throw new Error(String(controller.signal.reason ?? "Run cancelled"));
       }
     };
+    const abortFromHost = () =>
+      controller.abort(options.signal?.reason ?? "Run cancelled");
+    let compiled!: CompiledRun;
+    try {
+      compiled = this.compileChecked(snapshot, graphId, () => {
+        if (options.signal?.aborted) abortFromHost();
+        check();
+      });
+    } catch (error) {
+      // Structural errors stay synchronous. Resource termination is delivered
+      // through the usual failed/cancelled handle without starting executors.
+      if (!controller.signal.aborted) throw error;
+    }
     const awaitExecutor = <T>(promise: T | Promise<T>): Promise<T> =>
       new Promise((resolve, reject) => {
         const abort = () =>
@@ -333,14 +416,12 @@ export class Runner {
       }
       return graphOutputs;
     };
-    const abortFromHost = () =>
-      controller.abort(options.signal?.reason ?? "Run cancelled");
     options.signal?.addEventListener("abort", abortFromHost, { once: true });
     if (options.signal?.aborted) abortFromHost();
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort("Run timed out");
-    }, timeoutMs);
+    }, Math.max(0, timeoutMs - (performance.now() - started)));
     let resolveResult!: (result: RunResult) => void;
     const result = new Promise<RunResult>((resolve) => {
       resolveResult = resolve;
@@ -364,6 +445,7 @@ export class Runner {
       emit({ type: "run", status: "running", path: [] });
       let final: RunResult;
       try {
+        check();
         const inputs = { ...options.inputs };
         for (const port of compiled.document.graphs[graphId].inputs) {
           if (

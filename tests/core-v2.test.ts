@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { emptyGraph, GraphDocument, NodeRegistry } from "../src/core/index.ts";
+import type { GraphCommand } from "../src/core/index.ts";
 
 export function registry() {
   return new NodeRegistry()
@@ -43,6 +44,166 @@ function connected() {
   });
   return document;
 }
+
+Deno.test("command selectors reject inherited records without mutating shared prototypes", () => {
+  for (
+    const id of [
+      "__proto__",
+      "constructor",
+      "toString",
+      "valueOf",
+      "hasOwnProperty",
+    ]
+  ) {
+    const commands: GraphCommand[] = [
+      { type: "rename-graph", graphId: id, label: "polluted" },
+      { type: "set-interface", graphId: id, inputs: [], outputs: [] },
+      { type: "update-node", nodeId: id, changes: { label: "polluted" } },
+      { type: "move-nodes", positions: { [id]: { x: 1, y: 2 } } },
+      { type: "update-group", groupId: id, changes: { parentId: "missing" } },
+    ];
+    for (const command of commands) {
+      const document = connected(), before = document.serialize();
+      const revision = document.revision,
+        canUndo = document.canUndo,
+        canRedo = document.canRedo;
+      let notifications = 0;
+      document.subscribe(() => notifications++);
+      const target = id === "__proto__"
+        ? Object.prototype
+        : Reflect.get(Object.prototype, id) as object;
+      const descriptors = Object.getOwnPropertyDescriptors(target);
+      let after: PropertyDescriptorMap;
+      let rejected = false;
+      try {
+        document.dispatch(JSON.parse(JSON.stringify(command)));
+      } catch {
+        rejected = true;
+      } finally {
+        after = Object.getOwnPropertyDescriptors(target);
+        // The vulnerable baseline must not contaminate later tests.
+        for (const key of Reflect.ownKeys(target)) {
+          if (!Object.hasOwn(descriptors, key)) {
+            Reflect.deleteProperty(target, key);
+          }
+        }
+        Object.defineProperties(target, descriptors);
+      }
+      assert.deepEqual(after, descriptors, `${command.type}: ${id}`);
+      assert.ok(rejected, `${command.type}: ${id} must be rejected`);
+      assert.equal(document.serialize(), before);
+      assert.equal(document.revision, revision);
+      assert.equal(document.canUndo, canUndo);
+      assert.equal(document.canRedo, canRedo);
+      assert.equal(notifications, 0);
+    }
+  }
+});
+
+Deno.test("selector failure poisons a caught transaction and guards temporary group parents", () => {
+  const document = connected();
+  document.dispatch({
+    type: "add-group",
+    group: { id: "g", label: "Group", nodeIds: ["a"] },
+  });
+  const before = document.serialize();
+  assert.throws(() =>
+    document.transaction("Caught selector", () => {
+      document.dispatch({ type: "rename-graph", label: "Changed" });
+      try {
+        document.dispatch({
+          type: "update-group",
+          groupId: "toString",
+          changes: {},
+        });
+      } catch { /* The transaction must still fail. */ }
+    })
+  );
+  assert.equal(document.serialize(), before);
+  assert.throws(() =>
+    document.transaction("Temporary parent", () => {
+      document.dispatch({
+        type: "update-group",
+        groupId: "g",
+        changes: { parentId: "__proto__" },
+      });
+      document.dispatch({ type: "ungroup", groupId: "g" });
+    }), /Group does not exist/);
+  assert.equal(document.serialize(), before);
+});
+
+Deno.test("own Object-method IDs and prototype-named JSON metadata remain usable", () => {
+  const document = new GraphDocument(registry());
+  document.dispatch({ type: "add-graph", graph: emptyGraph("hasOwnProperty") });
+  document.dispatch({
+    type: "rename-graph",
+    graphId: "hasOwnProperty",
+    label: "Own graph",
+  });
+  document.dispatch({
+    type: "add-node",
+    node: { id: "toString", type: "number" },
+  });
+  document.dispatch({
+    type: "move-nodes",
+    positions: { toString: { x: 7, y: 9 } },
+  });
+  document.dispatch({
+    type: "update-node",
+    nodeId: "toString",
+    changes: { label: "Own node" },
+  });
+  document.dispatch({
+    type: "add-group",
+    group: { id: "valueOf", label: "Own group", nodeIds: ["toString"] },
+  });
+  document.dispatch({
+    type: "update-group",
+    groupId: "valueOf",
+    changes: JSON.parse(
+      '{"label":"Updated","__proto__":{"parentId":"missing"}}',
+    ),
+  });
+  const groupId: string = "valueOf", nodeId: string = "toString";
+  const group = document.snapshot().graphs.root.groups[groupId];
+  assert.equal(group.label, "Updated");
+  assert.equal(Object.getPrototypeOf(group), Object.prototype);
+  assert.equal(Object.hasOwn(group, "__proto__"), true);
+  assert.equal(group.parentId, undefined);
+  assert.deepEqual(document.snapshot().graphs.root.nodes[nodeId].position, {
+    x: 7,
+    y: 9,
+  });
+  const before = document.serialize();
+  for (const groupId of ["__proto__", "missing", "constructor", "toString"]) {
+    document.dispatch({ type: "ungroup", groupId });
+  }
+  assert.equal(document.serialize(), before);
+  document.dispatch({ type: "ungroup", groupId: "valueOf" });
+  document.undo();
+  assert.equal(document.serialize(), before);
+  document.redo();
+  assert.equal(
+    Object.hasOwn(document.snapshot().graphs.root.groups, "valueOf"),
+    false,
+  );
+  const fragment = document.copy(["toString"]);
+  assert.equal(document.paste(fragment, "hasOwnProperty").length, 1);
+  assert.throws(
+    () => document.paste(fragment, "__proto__"),
+    /Graph does not exist/,
+  );
+  assert.throws(() => document.copy([], "toString"), /Graph does not exist/);
+  assert.throws(
+    () => document.createSubgraph(["toString"], "__proto__"),
+    /Graph does not exist/,
+  );
+  assert.throws(
+    () => document.createSubgraph(["valueOf"]),
+    /Select at least one node/,
+  );
+  assert.ok(document.createSubgraph(["toString"]));
+});
 Deno.test("validates commands atomically, including a caught failure inside a transaction", () => {
   const document = connected(),
     before = document.serialize();

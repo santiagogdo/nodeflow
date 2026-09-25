@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { layoutSteps } from "../src/layout/algorithm.ts";
 import {
   layoutGraph,
   layoutGraphAsync,
@@ -158,4 +159,136 @@ Deno.test("lays out 1,000 nodes and 2,000 connections with finite geometry", () 
     ),
     true,
   );
+});
+
+Deno.test("deep group chains use bounded hierarchy work without recursive scope copies", () => {
+  const count = 2048;
+  for (const direction of ["right", "down"] as const) {
+    let reads = 0;
+    const groups = Array.from({ length: count }, (_, i) => ({
+      id: `g${i}`,
+      nodeIds: [],
+      get parentId() {
+        if (++reads > count * 8) throw new Error("Repeated ancestor traversal");
+        return i ? `g${i - 1}` : undefined;
+      },
+    })).reverse();
+    const steps = layoutSteps({ nodes: [], edges: [], groups }, { direction });
+    let next = steps.next(), work = 0;
+    while (!next.done) {
+      assert.ok(
+        ++work < count * 64,
+        "hierarchy work must scale with input size",
+      );
+      next = steps.next();
+    }
+    const result = next.value;
+    assert.equal(Object.keys(result.groups).length, count);
+    assert.ok(reads <= count * 2);
+    assert.deepEqual(result.groups.g0, {
+      x: 40,
+      y: 40,
+      width: direction === "right"
+        ? 240 + (count - 1) * 64
+        : 120 + (count - 1) * 80,
+      height: direction === "right"
+        ? 120 + (count - 1) * 80
+        : 240 + (count - 1) * 64,
+    });
+    const inner = result.groups[`g${count - 1}`];
+    assert.equal(inner.x, 40 + (count - 1) * (direction === "right" ? 32 : 48));
+    assert.equal(inner.y, 40 + (count - 1) * (direction === "right" ? 48 : 32));
+  }
+});
+
+Deno.test("pre-aborted layout does not traverse input in either driver", async () => {
+  const controller = new AbortController(), reason = new Error("Before layout");
+  controller.abort(reason);
+  let reads = 0;
+  const supplied = {
+    get nodes() {
+      reads++;
+      return [];
+    },
+    edges: [],
+    groups: [],
+  };
+  assert.throws(
+    () => layoutGraph(supplied, { signal: controller.signal }),
+    (error) => error === reason,
+  );
+  await assert.rejects(
+    layoutGraphAsync(supplied, { signal: controller.signal }),
+    (error) => error === reason,
+  );
+  assert.equal(reads, 0);
+});
+
+Deno.test("async hierarchy preprocessing yields and rechecks cancellation before more input", async () => {
+  const controller = new AbortController(),
+    reason = new Error("During hierarchy");
+  let reads = 0, afterAbort = 0, ticks = 0;
+  const groups = Array.from({ length: 1000 }, (_, i) => ({
+    id: `g${i}`,
+    nodeIds: [],
+    get parentId() {
+      reads++;
+      if (controller.signal.aborted) afterAbort++;
+      return i ? `g${i - 1}` : undefined;
+    },
+  }));
+  const now = performance.now;
+  const timer = setTimeout(() => controller.abort(reason), 0);
+  let result;
+  performance.now = () => ticks++;
+  try {
+    result = layoutGraphAsync({ nodes: [], edges: [], groups }, {
+      signal: controller.signal,
+    });
+  } finally {
+    performance.now = now;
+  }
+  try {
+    await assert.rejects(result, (error) => error === reason);
+  } finally {
+    clearTimeout(timer);
+  }
+  assert.ok(reads < groups.length);
+  assert.equal(afterAbort, 0);
+});
+
+Deno.test("rejects deep cycles and missing parents, and preserves special layout IDs", () => {
+  const groups = Array.from(
+    { length: 128 },
+    (_, i) => ({
+      id: `g${i}`,
+      nodeIds: [],
+      parentId: i ? `g${i - 1}` : "g127",
+    }),
+  );
+  assert.throws(
+    () => layoutGraph({ nodes: [], edges: [], groups }),
+    /Invalid layout group hierarchy/,
+  );
+  groups[0].parentId = "missing";
+  assert.throws(
+    () => layoutGraph({ nodes: [], edges: [], groups }),
+    /Invalid layout group hierarchy/,
+  );
+  const result = layoutGraph({
+    nodes: [{ id: "toString", width: 100, height: 50 }, {
+      id: "constructor",
+      width: 100,
+      height: 50,
+    }],
+    edges: [{ id: "e", source: "toString", target: "constructor" }],
+    groups: [{ id: "__proto__", nodeIds: ["toString"], parentId: "valueOf" }, {
+      id: "valueOf",
+      nodeIds: ["constructor"],
+    }],
+  });
+  assert.equal(Object.getPrototypeOf(result.groups), null);
+  assert.equal(Object.getPrototypeOf(result.positions), null);
+  assert.equal(Object.keys(result.groups).length, 2);
+  assert.equal(Object.keys(result.positions).length, 2);
 });

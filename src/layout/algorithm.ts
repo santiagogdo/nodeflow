@@ -7,10 +7,17 @@ import type {
   LayoutResult,
 } from "./types.ts";
 
-interface Box extends LayoutNode {
-  positions: Record<string, Point>;
-  groups: Record<string, Rect>;
-  members: Set<string>;
+interface Scope {
+  id?: string;
+  parent?: Scope;
+  depth: number;
+  ancestors: Scope[];
+  nodes: LayoutNode[];
+  children: Scope[];
+  edges: LayoutEdge[];
+  placement: Map<string, Point>;
+  width: number;
+  height: number;
 }
 const boundsOf = (rects: Rect[]): Rect => {
   if (!rects.length) return { x: 0, y: 0, width: 0, height: 0 };
@@ -26,7 +33,7 @@ const boundsOf = (rects: Rect[]): Rect => {
 
 /** Original layered layout: SCC condensation, rank assignment, crossing sweeps, and packing. */
 function* layered(
-  boxes: Box[],
+  boxes: LayoutNode[],
   edges: LayoutEdge[],
   rankGap: number,
   nodeGap: number,
@@ -229,11 +236,14 @@ export function* layoutSteps(
   if (![origin.x, origin.y].every(Number.isFinite)) {
     throw new Error("Layout origin must be finite");
   }
-  const nodes = new Map(input.nodes.map((node) => [node.id, node]));
-  if (nodes.size !== input.nodes.length) {
-    throw new Error("Duplicate layout node IDs");
-  }
-  for (const node of nodes.values()) {
+  const nodes = new Map<string, LayoutNode>();
+  for (const supplied of input.nodes) {
+    const node = {
+      id: supplied.id,
+      width: supplied.width,
+      height: supplied.height,
+    };
+    if (nodes.has(node.id)) throw new Error("Duplicate layout node IDs");
     if (
       !node.id ||
       ![node.width, node.height].every(
@@ -242,71 +252,144 @@ export function* layoutSteps(
     ) {
       throw new Error("Layout nodes require positive finite sizes");
     }
+    nodes.set(node.id, node);
+    yield;
   }
-  for (const edge of input.edges) {
+  const edges: LayoutEdge[] = [];
+  for (const supplied of input.edges) {
+    const edge = {
+      id: supplied.id,
+      source: supplied.source,
+      target: supplied.target,
+    };
     if (!nodes.has(edge.source) || !nodes.has(edge.target)) {
       throw new Error("Layout edge refers to a missing node");
     }
+    edges.push(edge);
+    yield;
   }
-  const groups = new Map(
-    (input.groups ?? []).map((group) => [group.id, group]),
-  );
-  if (groups.size !== (input.groups?.length ?? 0)) {
-    throw new Error("Duplicate layout group IDs");
-  }
+  const createScope = (id?: string): Scope => ({
+    id,
+    depth: 0,
+    ancestors: [],
+    nodes: [],
+    children: [],
+    edges: [],
+    placement: new Map(),
+    width: 0,
+    height: 0,
+  });
+  const root = createScope(),
+    groups = new Map<string, Scope>(),
+    parents = new Map<string, string | undefined>();
   const membership = new Map<string, string>();
-  for (const group of groups.values()) {
+  for (const supplied of input.groups ?? []) {
+    const group = {
+      id: supplied.id,
+      parentId: supplied.parentId,
+      nodeIds: [...supplied.nodeIds],
+    };
+    if (groups.has(group.id)) throw new Error("Duplicate layout group IDs");
     if (nodes.has(group.id)) {
       throw new Error("Layout node and group IDs must differ");
     }
+    groups.set(group.id, createScope(group.id));
+    parents.set(group.id, group.parentId);
     for (const id of group.nodeIds) {
       if (!nodes.has(id) || membership.has(id)) {
         throw new Error("Invalid layout group membership");
       }
       membership.set(id, group.id);
+      yield;
     }
-    let parent = group.parentId;
-    const ancestors = new Set([group.id]);
-    while (parent) {
-      if (ancestors.has(parent) || !groups.has(parent)) {
-        throw new Error("Invalid layout group hierarchy");
-      }
-      ancestors.add(parent);
-      parent = groups.get(parent)!.parentId;
-    }
+    yield;
   }
-  function* scope(parent?: string): Generator<void, Box> {
-    const boxes: Box[] = [];
-    for (const node of nodes.values()) {
-      if (membership.get(node.id) === parent) {
-        boxes.push({
-          id: node.id,
-          width: down ? node.height : node.width,
-          height: down ? node.width : node.height,
-          positions: { [node.id]: { x: 0, y: 0 } },
-          groups: {},
-          members: new Set([node.id]),
-        });
+  for (const [id, scope] of groups) {
+    const parentId = parents.get(id);
+    const parent = parentId === undefined ? root : groups.get(parentId);
+    if (!parent) throw new Error("Invalid layout group hierarchy");
+    scope.parent = parent;
+    parent.children.push(scope);
+    yield;
+  }
+  // Every group has one parent. A group unreachable from the root is in, or
+  // below, a cycle. Index each reachable scope once, without ancestor walks.
+  const order: Scope[] = [], pending = [root];
+  while (pending.length) {
+    const scope = pending.pop()!;
+    order.push(scope);
+    if (scope.parent) {
+      scope.depth = scope.parent.depth + 1;
+      scope.ancestors.push(scope.parent);
+      for (let i = 1; scope.ancestors[i - 1].ancestors[i - 1]; i++) {
+        scope.ancestors.push(scope.ancestors[i - 1].ancestors[i - 1]);
       }
     }
-    for (const group of groups.values()) {
-      if (group.parentId === parent) boxes.push(yield* scope(group.id));
+    for (let i = scope.children.length - 1; i >= 0; i--) {
+      pending.push(scope.children[i]);
     }
-    const owner = new Map<string, string>();
-    boxes.forEach((box) => box.members.forEach((id) => owner.set(id, box.id)));
-    const edges = input.edges
-      .filter((edge) => owner.has(edge.source) && owner.has(edge.target))
-      .map((edge) => ({
-        ...edge,
-        source: owner.get(edge.source)!,
-        target: owner.get(edge.target)!,
-      }));
-    const placement = yield* layered(boxes, edges, rankGap, nodeGap);
-    const positions: Record<string, Point> = Object.create(null),
-      groupBounds: Record<string, Rect> = Object.create(null),
-      members = new Set<string>();
-    const padding = parent ? 32 : 0,
-      header = parent ? 48 : 0;
+    yield;
+  }
+  if (order.length !== groups.size + 1) {
+    throw new Error("Invalid layout group hierarchy");
+  }
+  const containers = new Map<string, Scope>();
+  for (const node of nodes.values()) {
+    const groupId = membership.get(node.id);
+    const scope = groupId === undefined ? root : groups.get(groupId)!;
+    scope.nodes.push({
+      id: node.id,
+      width: down ? node.height : node.width,
+      height: down ? node.width : node.height,
+    });
+    containers.set(node.id, scope);
+    yield;
+  }
+  const lift = (scope: Scope, depth: number) => {
+    let distance = scope.depth - depth;
+    for (let i = 0; distance; i++, distance = Math.floor(distance / 2)) {
+      if (distance % 2) scope = scope.ancestors[i];
+    }
+    return scope;
+  };
+  for (const edge of edges) {
+    const source = containers.get(edge.source)!,
+      target = containers.get(edge.target)!;
+    let left = lift(source, Math.min(source.depth, target.depth)),
+      right = lift(target, Math.min(source.depth, target.depth));
+    if (left !== right) {
+      for (let i = left.ancestors.length - 1; i >= 0; i--) {
+        if (left.ancestors[i] !== right.ancestors[i]) {
+          left = left.ancestors[i];
+          right = right.ancestors[i];
+        }
+      }
+      left = left.parent!;
+    }
+    // Only the lowest common scope needs this edge; higher scopes see a
+    // self-loop inside one child, which layered() would ignore.
+    left.edges.push({
+      ...edge,
+      source: source === left ? edge.source : lift(source, left.depth + 1).id!,
+      target: target === left ? edge.target : lift(target, left.depth + 1).id!,
+    });
+    yield;
+  }
+  // Size scopes bottom-up, retaining only immediate child placements.
+  for (let i = order.length - 1; i >= 0; i--) {
+    const scope = order[i];
+    const boxes = [
+      ...scope.nodes,
+      ...scope.children.map((child) => ({
+        id: child.id!,
+        width: child.width,
+        height: child.height,
+      })),
+    ];
+    const placement = yield* layered(boxes, scope.edges, rankGap, nodeGap);
+    scope.placement = placement;
+    const padding = scope === root ? 0 : 32,
+      header = scope === root ? 0 : 48;
     const localBounds = boundsOf(
       boxes.map((box) => ({
         ...placement.get(box.id)!,
@@ -314,59 +397,60 @@ export function* layoutSteps(
         height: box.height,
       })),
     );
-    const width = Math.max(parent ? 240 : 0, localBounds.width + padding * 2),
-      height = Math.max(
-        parent ? 120 : 0,
-        localBounds.height + padding + header,
+    scope.width = Math.max(
+      scope === root ? 0 : 240,
+      localBounds.width + padding * 2,
+    );
+    scope.height = Math.max(
+      scope === root ? 0 : 120,
+      localBounds.height + padding + header,
+    );
+    yield;
+  }
+  const positions: Record<string, Point> = Object.create(null),
+    groupBounds: Record<string, Rect> = Object.create(null),
+    offsets = new Map<Scope, Point>([[root, { x: 0, y: 0 }]]);
+  const point = (x: number, y: number): Point => ({
+    x: origin.x + (down ? y : x),
+    y: origin.y + (down ? x : y),
+  });
+  // Flatten once, rather than copying every descendant at every ancestor.
+  for (const scope of order) {
+    const offset = offsets.get(scope)!,
+      padding = scope === root ? 0 : 32,
+      header = scope === root ? 0 : 48;
+    if (scope !== root) {
+      groupBounds[scope.id!] = {
+        ...point(offset.x, offset.y),
+        width: down ? scope.height : scope.width,
+        height: down ? scope.width : scope.height,
+      };
+    }
+    for (const node of scope.nodes) {
+      const local = scope.placement.get(node.id)!;
+      positions[node.id] = point(
+        offset.x + local.x + padding,
+        offset.y + local.y + header,
       );
-    for (const box of boxes) {
-      const offset = placement.get(box.id)!;
-      for (const [id, point] of Object.entries(box.positions)) {
-        positions[id] = {
-          x: point.x + offset.x + padding,
-          y: point.y + offset.y + header,
-        };
-        members.add(id);
-      }
-      for (const [id, rect] of Object.entries(box.groups)) {
-        groupBounds[id] = {
-          ...rect,
-          x: rect.x + offset.x + padding,
-          y: rect.y + offset.y + header,
-        };
-      }
+      yield;
     }
-    if (parent) groupBounds[parent] = { x: 0, y: 0, width, height };
-    return {
-      id: parent ?? "",
-      width,
-      height,
-      positions,
-      groups: groupBounds,
-      members,
-    };
-  }
-  const result = yield* scope();
-  for (const point of Object.values(result.positions)) {
-    if (down) [point.x, point.y] = [point.y, point.x];
-    point.x += origin.x;
-    point.y += origin.y;
-  }
-  for (const rect of Object.values(result.groups)) {
-    if (down) {
-      [rect.x, rect.y] = [rect.y, rect.x];
-      [rect.width, rect.height] = [rect.height, rect.width];
+    for (const child of scope.children) {
+      const local = scope.placement.get(child.id!)!;
+      offsets.set(child, {
+        x: offset.x + local.x + padding,
+        y: offset.y + local.y + header,
+      });
+      yield;
     }
-    rect.x += origin.x;
-    rect.y += origin.y;
+    yield;
   }
   return {
-    positions: result.positions,
-    groups: result.groups,
+    positions,
+    groups: groupBounds,
     bounds: {
       ...origin,
-      width: down ? result.height : result.width,
-      height: down ? result.width : result.height,
+      width: down ? root.height : root.width,
+      height: down ? root.width : root.height,
     },
   };
 }
@@ -374,6 +458,7 @@ export function layoutGraph(
   input: LayoutInput,
   options: LayoutOptions = {},
 ): LayoutResult {
+  options.signal?.throwIfAborted();
   const steps = layoutSteps(input, options);
   let result = steps.next();
   while (!result.done) {
@@ -387,6 +472,7 @@ export async function layoutGraphAsync(
   input: LayoutInput,
   options: LayoutOptions = {},
 ): Promise<LayoutResult> {
+  options.signal?.throwIfAborted();
   const steps = layoutSteps(input, options);
   let result = steps.next(),
     started = performance.now();
@@ -396,6 +482,7 @@ export async function layoutGraphAsync(
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       started = performance.now();
     }
+    options.signal?.throwIfAborted();
     result = steps.next();
   }
   options.signal?.throwIfAborted();

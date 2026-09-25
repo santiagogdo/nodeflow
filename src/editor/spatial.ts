@@ -1,5 +1,20 @@
 import type { Rect } from "../core/index.ts";
 
+function cellRange(rect: Rect, cellSize: number, limit: number) {
+  const left = Math.floor(rect.x / cellSize),
+    right = Math.floor((rect.x + rect.width) / cellSize),
+    top = Math.floor(rect.y / cellSize),
+    bottom = Math.floor((rect.y + rect.height) / cellSize);
+  const columns = right - left + 1, rows = bottom - top + 1;
+  // A small span alone does not ensure that incrementing its coordinates makes
+  // progress. Unsafe coordinates and overflowing extents use the fallback.
+  if (
+    ![left, right, top, bottom].every(Number.isSafeInteger) ||
+    columns <= 0 || rows <= 0 || columns * rows > limit
+  ) return null;
+  return { left, top, columns, rows };
+}
+
 /** Broad-phase spatial hash, including an overflow bucket for very long connections. */
 export class SpatialIndex {
   private cells = new Map<string, Set<string>>();
@@ -13,17 +28,14 @@ export class SpatialIndex {
   }
   insert(id: string, rect: Rect) {
     this.bounds.set(id, rect);
-    const left = Math.floor(rect.x / this.cellSize),
-      right = Math.floor((rect.x + rect.width) / this.cellSize),
-      top = Math.floor(rect.y / this.cellSize),
-      bottom = Math.floor((rect.y + rect.height) / this.cellSize);
-    if ((right - left + 1) * (bottom - top + 1) > 128) {
+    const range = cellRange(rect, this.cellSize, 128);
+    if (!range) {
       this.overflow.add(id);
       return;
     }
-    for (let x = left; x <= right; x++) {
-      for (let y = top; y <= bottom; y++) {
-        const key = `${x},${y}`;
+    for (let x = 0; x < range.columns; x++) {
+      for (let y = 0; y < range.rows; y++) {
+        const key = `${range.left + x},${range.top + y}`;
         const cell = this.cells.get(key) ?? new Set();
         cell.add(id);
         this.cells.set(key, cell);
@@ -31,17 +43,16 @@ export class SpatialIndex {
     }
   }
   query(rect: Rect): string[] {
-    const left = Math.floor(rect.x / this.cellSize),
-      right = Math.floor((rect.x + rect.width) / this.cellSize),
-      top = Math.floor(rect.y / this.cellSize),
-      bottom = Math.floor((rect.y + rect.height) / this.cellSize);
+    const range = cellRange(rect, this.cellSize, 1024);
     const candidates = new Set(this.overflow);
-    if ((right - left + 1) * (bottom - top + 1) > 1024) {
+    if (!range) {
       this.bounds.forEach((_, id) => candidates.add(id));
     } else {
-      for (let x = left; x <= right; x++) {
-        for (let y = top; y <= bottom; y++) {
-          this.cells.get(`${x},${y}`)?.forEach((id) => candidates.add(id));
+      for (let x = 0; x < range.columns; x++) {
+        for (let y = 0; y < range.rows; y++) {
+          this.cells.get(`${range.left + x},${range.top + y}`)?.forEach((id) =>
+            candidates.add(id)
+          );
         }
       }
     }

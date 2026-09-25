@@ -1,11 +1,16 @@
-import { assertId, assertRecord, cloneJSON } from "./json.ts";
+import { assertId, assertRecord, cloneJSONChecked } from "./json.ts";
 import type { DocumentSnapshot, GraphPort } from "./types.ts";
-import { NodeRegistry } from "./registry.ts";
+import { createInterfacePortLookup, NodeRegistry } from "./registry.ts";
 
-function ports(ports: readonly GraphPort[], label: string) {
+function ports(
+  ports: readonly GraphPort[],
+  label: string,
+  checkpoint?: () => void,
+) {
   if (!Array.isArray(ports)) throw new Error(`${label} must be an array`);
   const ids = new Set<string>();
   for (const port of ports) {
+    checkpoint?.();
     assertRecord(port, "Port");
     assertId(port.id);
     if (ids.has(port.id)) throw new Error(`Duplicate port: ${port.id}`);
@@ -24,8 +29,17 @@ export function validateDocument(
   input: unknown,
   registry: NodeRegistry,
 ): DocumentSnapshot {
-  const state = cloneJSON(
+  return validateDocumentChecked(input, registry);
+}
+/** Internal runner checkpoints also cover validation and detached JSON copying. */
+export function validateDocumentChecked(
+  input: unknown,
+  registry: NodeRegistry,
+  checkpoint?: () => void,
+): DocumentSnapshot {
+  const state = cloneJSONChecked(
     typeof input === "string" ? JSON.parse(input) : input,
+    checkpoint,
   );
   assertRecord(state, "Document");
   if (state.version !== 2) {
@@ -39,7 +53,9 @@ export function validateDocument(
     throw new Error("Missing root graph");
   }
   const document = state as DocumentSnapshot;
+  const interfacePort = createInterfacePortLookup(checkpoint);
   for (const [graphId, graph] of Object.entries(document.graphs)) {
+    checkpoint?.();
     assertId(graphId);
     assertRecord(graph, "Graph");
     if (graph.id !== graphId || typeof graph.label !== "string") {
@@ -48,8 +64,8 @@ export function validateDocument(
     assertRecord(graph.nodes, "Nodes");
     assertRecord(graph.connections, "Connections");
     assertRecord(graph.groups, "Groups");
-    ports(graph.inputs, "Graph inputs");
-    ports(graph.outputs, "Graph outputs");
+    ports(graph.inputs, "Graph inputs", checkpoint);
+    ports(graph.outputs, "Graph outputs", checkpoint);
     const used = new Set<string>();
     const claim = (id: string, key: string) => {
       assertId(id);
@@ -59,6 +75,7 @@ export function validateDocument(
       used.add(id);
     };
     for (const [key, node] of Object.entries(graph.nodes)) {
+      checkpoint?.();
       assertRecord(node, "Node");
       claim(node.id, key);
       if (typeof node.label !== "string" || typeof node.type !== "string") {
@@ -78,9 +95,10 @@ export function validateDocument(
       if (!["@subgraph", "@input", "@output"].includes(node.type)) {
         registry.get(node.type).validate?.(node.data);
       }
-      const nodePorts = registry.ports(node, graph, document);
-      ports(nodePorts, "Node ports");
+      const nodePorts = registry.ports(node, graph, document, interfacePort);
+      ports(nodePorts, "Node ports", checkpoint);
       for (const port of nodePorts) {
+        checkpoint?.();
         if (!["input", "output"].includes(port.direction)) {
           throw new Error("Invalid port direction");
         }
@@ -95,6 +113,7 @@ export function validateDocument(
     const pairs = new Set<string>(),
       targets = new Set<string>();
     for (const [key, connection] of Object.entries(graph.connections)) {
+      checkpoint?.();
       assertRecord(connection, "Connection");
       claim(connection.id, key);
       assertRecord(connection.source, "Source");
@@ -109,10 +128,10 @@ export function validateDocument(
         throw new Error("Connection refers to a missing node");
       }
       const source = registry
-        .ports(sourceNode, graph, document)
+        .ports(sourceNode, graph, document, interfacePort)
         .find((port) => port.id === connection.source.portId);
       const target = registry
-        .ports(targetNode, graph, document)
+        .ports(targetNode, graph, document, interfacePort)
         .find((port) => port.id === connection.target.portId);
       if (!source || !target || !registry.compatible(source, target)) {
         throw new Error("Incompatible connection ports");
@@ -136,37 +155,49 @@ export function validateDocument(
     }
     const membership = new Set<string>();
     for (const [key, group] of Object.entries(graph.groups)) {
+      checkpoint?.();
       assertRecord(group, "Group");
       claim(group.id, key);
       if (typeof group.label !== "string" || !Array.isArray(group.nodeIds)) {
         throw new Error("Invalid group");
       }
       for (const id of group.nodeIds) {
+        checkpoint?.();
         if (!Object.hasOwn(graph.nodes, id) || membership.has(id)) {
           throw new Error("A node must belong to at most one immediate group");
         }
         membership.add(id);
       }
-      const ancestors = new Set([group.id]);
-      let parent = group.parentId;
-      while (parent) {
+    }
+    const complete = new Set<string>();
+    for (const id of Object.keys(graph.groups)) {
+      const ancestors = new Set<string>();
+      let parent: string | undefined = id;
+      while (parent && !complete.has(parent)) {
+        checkpoint?.();
         if (ancestors.has(parent) || !Object.hasOwn(graph.groups, parent)) {
           throw new Error("Invalid group hierarchy");
         }
         ancestors.add(parent);
         parent = graph.groups[parent].parentId;
       }
+      for (const ancestor of ancestors) {
+        checkpoint?.();
+        complete.add(ancestor);
+      }
     }
   }
   const visiting = new Set<string>(),
     visited = new Set<string>();
   const walk = (id: string) => {
+    checkpoint?.();
     if (visiting.has(id)) {
       throw new Error("Recursive subgraph definitions are not supported");
     }
     if (visited.has(id)) return;
     visiting.add(id);
     for (const node of Object.values(document.graphs[id].nodes)) {
+      checkpoint?.();
       if (node.type === "@subgraph") walk(node.subgraphId!);
     }
     visiting.delete(id);

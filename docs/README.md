@@ -233,6 +233,10 @@ separate instances for concurrency.
 Options include `graphId`, graph `inputs`, `signal`, `timeoutMs` (30,000
 default), and `maxExecutions` (10,000 default). Compilation validates the
 reachable graph hierarchy, executors, required inputs, and topological order.
+The timeout includes snapshot validation and compilation, with deadline and
+abort checks between work units. A pre-aborted run returns a cancelled handle
+without traversing the snapshot. Structural compilation errors still throw
+synchronously. `maxExecutions` counts actual node invocations, not graph size.
 Unconnected input configuration with a matching data key overrides the port
 default. Connected values take priority. Connected optional inputs on skipped
 branches are omitted. Executors own runtime value validation.
@@ -267,8 +271,10 @@ each rank from measured geometry, and packs disconnected components and nested
 group scopes. Cycles are arranged as components and remain cycles. It does not
 change topology or guarantee an optimal crossing count.
 
-`layoutGraphAsync()` yields between work units. For isolation and immediate
-cancellation, use `layoutWithWorker(createWorker, input, options)`. Each call
+`layoutGraphAsync()` yields between work units, including hierarchy
+preprocessing. Both layout functions check a pre-aborted signal before reading
+the input. For isolation and immediate cancellation, use
+`layoutWithWorker(createWorker, input, options)`. Each call
 owns its worker and terminates it on success, cancellation, or failure. The
 published `nodeflow/layout-worker` module uses the exported request/response
 protocol. Resolve that asset with your bundler and pass a factory returning a

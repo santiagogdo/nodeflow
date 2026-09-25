@@ -28,6 +28,9 @@ export class DefaultPainter implements EditorPainter {
     this.widths.clear();
   }
   private textWidth(text: string): number {
+    // Bound retained text as well as the number of cache entries. Editing still
+    // receives the exact measurement for long values.
+    if (text.length > 1024) return this.ctx.measureText(text).width;
     const key = `${this.ctx.font}:${text}`;
     const cached = this.widths.get(key);
     if (cached !== undefined) return cached;
@@ -38,10 +41,28 @@ export class DefaultPainter implements EditorPainter {
   }
   private text(text: string, x: number, y: number, maxWidth = Infinity) {
     if (this.textWidth(text) > maxWidth) {
-      while (text.length && this.textWidth(`${text}…`) > maxWidth) {
-        text = text.slice(0, -1);
+      const prefix = (end: number) => {
+        // Do not leave half of a surrogate pair before the ellipsis.
+        if (
+          end > 0 && end < text.length &&
+          /[\uD800-\uDBFF]/.test(text[end - 1]) &&
+          /[\uDC00-\uDFFF]/.test(text[end])
+        ) end--;
+        return `${text.slice(0, end)}…`;
+      };
+      let low = 0, high = Math.min(16, text.length);
+      // Find a short search interval first, so narrow labels do not repeatedly
+      // measure large prefixes. Both searches take logarithmically many probes.
+      while (high < text.length && this.textWidth(prefix(high)) <= maxWidth) {
+        low = high;
+        high = Math.min(high * 2, text.length);
       }
-      text += "…";
+      while (low + 1 < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (this.textWidth(prefix(middle)) <= maxWidth) low = middle;
+        else high = middle;
+      }
+      text = prefix(low);
     }
     this.ctx.fillText(text, x, y);
   }
